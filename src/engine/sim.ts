@@ -11,9 +11,9 @@ const MAX_SPEED: Record<Role, number> = {
 };
 
 // Tuning knobs (see scripts/simtest.ts to re-calibrate)
-const SHOOT_K = 0.012;
+const SHOOT_K = 0.025;
 const DECIDE_BASE = 2.0; // seconds a carrier holds the ball before the next decision (tempo scales it)
-const DUEL_K = 1.0;
+const DUEL_K = 0.6;
 const INTERCEPT_K = 0.5;
 
 export type TeamIdx = 0 | 1;
@@ -279,6 +279,18 @@ export class Match {
     // Team shape shifts with the ball
     wx += (ball.x - PW / 2) * 0.3;
     wy += (ball.y - PH / 2) * (0.25 + 0.3 * tac.compactness);
+
+    // Late arrivals: when the ball is in the final third, wide/midfield players with runs attack the box
+    if (inPoss && spec.role !== 'CB' && spec.role !== 'DM' && spec.role !== 'ST') {
+      const prog = progress(p.team, ball.x);
+      const w = clamp((prog - 0.5) / 0.3, 0, 1) * inst.runs * (spec.role === 'FB' || spec.role === 'WB' ? 0.3 : spec.role === 'CM' ? 0.5 : 0.75);
+      if (w > 0) {
+        const goalX = p.team === 0 ? PW : 0;
+        wx = lerp(wx, goalX - dir * 11, w);
+        // far-side runners attack the back post, near-side stay wide to supply
+        if (Math.abs(wy - ball.y) > 18) wy = lerp(wy, PH / 2 + (wy - PH / 2) * 0.3, w);
+      }
+    }
 
     // Roam toward the ball / support space
     if (inPoss) {
@@ -661,7 +673,7 @@ export class Match {
     b.lastTeam = p.team;
     b.x = p.x;
     b.y = p.y;
-    p.decideT = 0.3 + this.rng.next() * 0.4;
+    p.decideT = 0.9 + this.rng.next() * 1.3; // time on the ball before the next decision
     // default carry: head goalward until the next decision
     const dir = attDir(p.team);
     p.tx = clamp(p.x + dir * 8, 1, PW - 1);

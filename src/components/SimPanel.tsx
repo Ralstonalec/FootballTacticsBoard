@@ -45,8 +45,8 @@ export function SimPanel(props: {
                 ['Shots (on target)', `${m.stats[0].shots} (${m.stats[0].onTarget})`, `${m.stats[1].shots} (${m.stats[1].onTarget})`],
                 ['xG', m.stats[0].xg.toFixed(2), m.stats[1].xg.toFixed(2)],
                 ['Passes (completed)', `${m.stats[0].passes} (${m.stats[0].passesDone})`, `${m.stats[1].passes} (${m.stats[1].passesDone})`],
-                ['Interceptions', m.stats[0].interceptions, m.stats[1].interceptions],
-                ['Duels won', m.stats[0].tackles, m.stats[1].tackles],
+                ['Passes cut out', m.stats[0].interceptions, m.stats[1].interceptions],
+                ['Ball won from carrier', m.stats[0].tackles, m.stats[1].tackles],
                 ['Won back in opp. half', m.stats[0].highRecoveries, m.stats[1].highRecoveries],
                 ['Final-third entries', m.stats[0].finalThirdEntries, m.stats[1].finalThirdEntries],
               ] as [string, string | number, string | number][]).map(([k, a, b]) => (
