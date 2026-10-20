@@ -25,7 +25,7 @@ export function DecisionPanel(props: {
         </select>
       </div>
       <label className="check"><input type="checkbox" checked={opts.wait} onChange={(e) => props.onOpts({ wait: e.target.checked })} /> pause the match while the AI thinks</label>
-      {!props.aiReady && <p className="muted">AI is not configured: set OPENROUTER_API_KEY on Vercel (or paste a key in ⚙ for local dev).</p>}
+      {!props.aiReady && <p className="muted">AI is not configured: set OPENROUTER_API_KEY on Vercel (see the 🤖 AI button, top right).</p>}
       {props.aiReady && props.model && <p className="muted">Decision model: <code>{props.model}</code></p>}
       <ul className="coach-log">
         {props.log.slice(-6).reverse().map((l, i) => (

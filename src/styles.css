@@ -160,3 +160,18 @@ ul.diag { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direc
 ul.diag li { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 8px; background: var(--panel); border-left: 3px solid var(--line2); }
 ul.diag li.ok { border-left-color: var(--accent); } ul.diag li.bad { border-left-color: var(--risk); }
 ul.diag li span { color: var(--muted); word-break: break-word; }
+
+/* ---------- AI status + settings dialog ---------- */
+.aistatus { display: flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 13px; margin-left: auto; }
+.aistatus i { width: 9px; height: 9px; border-radius: 50%; background: var(--risk); box-shadow: 0 0 8px currentColor; }
+.aistatus.ok { color: #86efac; } .aistatus.ok i { background: var(--accent); }
+.aistatus.dev { color: #fcd34d; } .aistatus.dev i { background: var(--warn); }
+.aistatus.bad { color: #fca5a5; border-color: rgba(239, 68, 68, .5); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(3, 7, 18, .72); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.modal { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; background: linear-gradient(180deg, var(--panel), var(--bg2)); border: 1px solid var(--line2); border-radius: 16px; padding: 18px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); display: flex; flex-direction: column; gap: 12px; }
+.modal > header { display: flex; justify-content: space-between; align-items: center; }
+.modal h3 { font-size: 16px; }
+.status-box { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); font-size: 13px; }
+.status-box.ok { border-color: rgba(34, 197, 94, .5); } .status-box.bad { border-color: rgba(239, 68, 68, .5); }
+details.dev { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--panel); }
+details.dev summary { cursor: pointer; color: var(--muted); font-size: 13px; }

@@ -14,6 +14,7 @@ import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
 import { askCoach, askDecisions, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
 import { BatchPanel } from './components/SimPanel';
+import { AISettings } from './components/AISettings';
 import { DecisionPanel, DecisionLogEntry, DecisionOpts } from './components/DecisionPanel';
 import { ORDERS } from './engine/sim';
 import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
@@ -150,6 +151,7 @@ export function App() {
   dec.current.key = browserKey;
   const activeDecisionModel = serverAI ? serverInfo.decisionModel ?? '' : decisionModel;
 
+  const [aiOpen, setAiOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<'team' | 'player'>('team');
   const [rightTab, setRightTab] = useState<'match' | 'coach' | 'insights'>('match');
   const locked = matchRef.current !== null;
@@ -505,6 +507,9 @@ export function App() {
           <button className={mode === 'match' ? 'on' : ''} onClick={() => goMode('match')}><b>▶</b> Live match</button>
           <button className={mode === 'lab' ? 'on' : ''} onClick={() => goMode('lab')}><b>🎞</b> Shape lab</button>
         </nav>
+        <button className={`aistatus ${serverAI ? 'ok' : apiKey.trim() ? 'dev' : 'bad'}`} onClick={() => setAiOpen(true)} title="AI settings and connection test">
+          <i /> {serverAI ? 'AI ready' : apiKey.trim() ? 'AI: local key' : 'AI not set up'}
+        </button>
         <div className="whose"><span>Your team</span>
         <div className="seg" role="group" aria-label="Team being edited">
           <button className={editing === 0 ? 'on home' : 'home'} onClick={() => { setEditing(0); setSelectedId(null); }}>● {home.name || 'Home'}</button>
@@ -725,13 +730,7 @@ export function App() {
                 claudeBusy={claudeBusy}
                 claudeError={claudeError}
                 aiReady={aiReady}
-                serverAI={serverAI}
-                apiKey={apiKey}
-                textModel={serverAI ? serverInfo.textModel ?? '' : textModel}
-                decisionModel={serverAI ? serverInfo.decisionModel ?? '' : decisionModel}
-                onApiKey={setApiKey}
-                onTextModel={setTextModel}
-                onDecisionModel={setDecisionModel}
+                onOpenSettings={() => setAiOpen(true)}
                 onAnalyze={analyze}
                 onApplyIdea={() => idea?.apply && setTeam(editing, (t) => idea.apply!(t))}
                 onAsk={ask}
@@ -741,6 +740,17 @@ export function App() {
           )}
         </aside>
       </main>
+      <AISettings
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        serverInfo={serverInfo}
+        apiKey={apiKey}
+        textModel={textModel}
+        decisionModel={decisionModel}
+        onApiKey={setApiKey}
+        onTextModel={setTextModel}
+        onDecisionModel={setDecisionModel}
+      />
     </div>
   );
 }

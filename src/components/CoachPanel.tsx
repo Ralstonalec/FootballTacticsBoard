@@ -39,10 +39,10 @@ export function CoachPanel(props: {
         {EXAMPLES.map((x) => <button key={x} className="chip" onClick={() => setText(x)}>{x}</button>)}
       </div>
       <button className="primary" onClick={send} disabled={!props.aiReady || props.busy || !text.trim()}
-        title={props.aiReady ? '' : 'AI is not configured yet (see ⚙ in the feedback panel). The quick-coach buttons on each player work without it.'}>
+        title={props.aiReady ? '' : 'AI is not configured yet (see the 🤖 AI button, top right). The quick-coach buttons on each player work without it.'}>
         {props.busy ? 'Thinking…' : 'Send to assistant'}
       </button>
-      {!props.aiReady && <p className="muted">AI not configured: use the quick-coach buttons / sliders on each player, or set up the API key.</p>}
+      {!props.aiReady && <p className="muted">AI not configured: use the quick-coach buttons / sliders on each player, or set up the AI via the 🤖 button, top right.</p>}
       <ul className="coach-log">
         {props.log.slice(-6).map((l, i) => (
           <li key={i} className={l.from}>

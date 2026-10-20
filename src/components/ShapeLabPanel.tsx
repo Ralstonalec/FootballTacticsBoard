@@ -100,7 +100,7 @@ export function ShapeLabPanel(props: {
         placeholder="Describe a ball sequence to test, e.g. “away win it in midfield and break down our right, then we counter-press”" />
       <div className="row">
         <button onClick={() => props.onGenerate(prompt)} disabled={!props.aiReady || ui.generating || !prompt.trim()}
-          title={props.aiReady ? '' : 'AI is not configured (see ⚙ in the feedback panel)'}>
+          title={props.aiReady ? '' : 'AI is not configured (see the 🤖 AI button, top right)'}>
           {ui.generating ? 'Writing…' : '✨ Generate sequence'}
         </button>
         <button onClick={props.onExplain} disabled={!props.aiReady || ui.explaining || ui.snapshots < 2}
