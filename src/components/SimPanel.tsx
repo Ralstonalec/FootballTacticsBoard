@@ -17,12 +17,6 @@ export function SimPanel(props: {
         <button className="primary" onClick={props.onStart}>▶ Start match</button>
       ) : (
         <>
-          <div className="scoreboard">
-            <span className="home">{m.teams[0].name}</span>
-            <b>{m.score[0]} – {m.score[1]}</b>
-            <span className="away">{m.teams[1].name}</span>
-          </div>
-          <div className="clock">{m.clock}{m.finished ? ' · full time' : ''}</div>
           <div className="row">
             <button onClick={props.onPlayPause} disabled={m.finished}>{props.playing ? '⏸ Pause' : '▶ Play'}</button>
             <select value={props.speed} onChange={(e) => props.onSpeed(Number(e.target.value))}>
@@ -54,11 +48,6 @@ export function SimPanel(props: {
               ))}
             </tbody>
           </table>
-          <ul className="events">
-            {m.events.slice(-6).reverse().map((e, i) => (
-              <li key={i} className={e.kind}>{Math.floor(e.t / 60)}′ {e.team === 0 ? '🔵' : '🔴'} {e.text}</li>
-            ))}
-          </ul>
         </>
       )}
       <h4>Batch test</h4>

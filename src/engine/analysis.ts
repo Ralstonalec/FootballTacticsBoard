@@ -61,7 +61,7 @@ export function staticFindings(team: Team, opp?: Team): Finding[] {
   // gaps between lines
   for (let i = 1; i < lines.length; i++) {
     const gap = avg(lines[i].map((p) => p.x)) - avg(lines[i - 1].map((p) => p.x));
-    if (gap > 0.28)
+    if (gap > 0.34)
       out.push({
         severity: 'warn',
         title: 'Big gap between lines',

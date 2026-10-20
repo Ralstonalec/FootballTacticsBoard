@@ -27,3 +27,20 @@ export function Section(props: { title: string; children: ReactNode; right?: Rea
     </section>
   );
 }
+
+export function Tabs<T extends string>(props: {
+  tabs: { id: T; label: ReactNode; badge?: ReactNode }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="tabs" role="tablist">
+      {props.tabs.map((t) => (
+        <button key={t.id} role="tab" aria-selected={props.value === t.id} className={props.value === t.id ? 'tab on' : 'tab'} onClick={() => props.onChange(t.id)}>
+          {t.label}
+          {t.badge != null && <span className="badge">{t.badge}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
