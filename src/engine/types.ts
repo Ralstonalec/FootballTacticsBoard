@@ -24,6 +24,11 @@ export interface Instructions {
   width: number; // -1 drift inside .. +1 hug the touchline
   passing: PassStyle;
   mark: string | null; // opponent player id to man-mark (null = zonal)
+  // Role behaviours (optional so older saved boards keep working; defaults give the classic behaviour)
+  depth?: number; // -1 drop deep to link play .. +1 stay high / on the last line (default 0)
+  lane?: number | null; // preferred channel, 0 = team's left .. 1 = right (null = wherever the formation puts them)
+  track?: number; // 0 stay up the pitch .. 1 recover and track back hard when the opponent has the ball (default 0.5)
+  cross?: number; // 0 never deliver early/wide balls .. 1 cross at every chance (default 0.5)
 }
 
 /**
@@ -37,6 +42,8 @@ export interface PlayerSpec {
   x: number;
   y: number;
   inst: Instructions;
+  roleName?: string; // custom label, e.g. 'Deep-lying playmaker'
+  brief?: string; // the coach's own words about what this player should do
 }
 
 export interface TeamTactics {
@@ -69,6 +76,10 @@ export function defaultInstructions(role: Role): Instructions {
     width: 0,
     passing: 'mixed',
     mark: null,
+    depth: 0,
+    lane: null,
+    track: 0.5,
+    cross: 0.5,
   };
   switch (role) {
     case 'GK':

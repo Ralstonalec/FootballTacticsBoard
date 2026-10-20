@@ -12,9 +12,11 @@ import { toWorld } from './engine/geometry';
 import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
-import { askCoach, askDecisions, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
+import { askCoach, askDecisions, askRole, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
 import { BatchPanel } from './components/SimPanel';
 import { AISettings } from './components/AISettings';
+import type { BriefReport } from './components/PlayerPanel';
+import { ROLE_TEMPLATES, applyBriefToPlayer, describeChanges, interpretBrief } from './engine/roles';
 import { DecisionPanel, DecisionLogEntry, DecisionOpts } from './components/DecisionPanel';
 import { ORDERS } from './engine/sim';
 import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
@@ -232,6 +234,55 @@ export function App() {
     coachNote(sel.team, `#${sel.index + 1} ${sel.player.role} now marks opp #${opp.players.indexOf(b) + 1} ${b.role}`);
     setTick((t) => t + 1);
   };
+  // ---- per-player role & free-text instructions
+  const [briefReport, setBriefReport] = useState<{ id: string; report: BriefReport } | null>(null);
+  const [briefBusy, setBriefBusy] = useState(false);
+  const commitRole = (r: { role?: Role; roleName?: string; inst: Partial<Instructions> }, brief: string, source: BriefReport['source'], notes: string[], extra: { notice?: string; summary?: string; unsupported?: string[] } = {}) => {
+    if (!sel) return;
+    const before = sel.player;
+    const opp = teams[1 - sel.team];
+    const next = applyBriefToPlayer(before, r, brief, !locked, source === 'template');
+    patchPlayer(sel.team, before.id, () => next);
+    const label = (id: string) => { const k = opp.players.findIndex((q) => q.id === id); return k >= 0 ? `man-marks their #${k + 1} ${opp.players[k].role}` : 'man-marking'; };
+    const changes = describeChanges(before.inst, next.inst, label);
+    if (!locked && r.role && r.role !== before.role) changes.unshift(`Position: ${before.role} → ${r.role}`);
+    if (locked && r.role && r.role !== before.role) notes = [...notes, `(Base position stays ${before.role} during a match; the behaviours were applied.)`];
+    setBriefReport({ id: before.id, report: { source, notes, changes, ...extra } });
+    coachNote(sel.team, `#${sel.index + 1} ${before.role} → ${r.roleName ?? 'new instructions'}`);
+    setTick((t) => t + 1);
+  };
+  const applyBrief = async (text: string, useAI: boolean) => {
+    const t = text.trim();
+    if (!sel || !t) return;
+    const id = sel.player.id;
+    const opp = teams[1 - sel.team];
+    const offline = (notice?: string) => {
+      const r = interpretBrief(t, sel.player, opp);
+      if (r.unmatched) {
+        patchPlayer(sel.team, id, (p) => ({ ...p, brief: t }));
+        setBriefReport({ id, report: { source: 'offline', notes: [], changes: [], unmatched: true, notice } });
+        return;
+      }
+      commitRole(r, t, 'offline', r.notes, { notice });
+    };
+    if (!useAI) { offline(); return; }
+    if (!aiReady) { offline('The AI isn’t set up, so I used the built-in interpreter, which only knows common football phrases. Set up the AI (🤖 button, top right) to have your description analysed properly.'); return; }
+    setBriefBusy(true);
+    try {
+      const r = await askRole({ text: t, player: sel.player, number: sel.index + 1, team: teams[sel.team], opp, browserKey });
+      commitRole(r, t, 'ai', r.notes.length ? r.notes : [r.summary || 'Applied the AI’s interpretation.'], { summary: r.notes.length ? r.summary : undefined, unsupported: r.unsupported });
+    } catch (e) {
+      offline(`The AI call failed (${e instanceof Error ? e.message : String(e)}), so I used the built-in interpreter instead.`);
+    } finally {
+      setBriefBusy(false);
+    }
+  };
+  const applyTemplate = (name: string) => {
+    const tpl = ROLE_TEMPLATES.find((x) => x.name === name);
+    if (!tpl || !sel) return;
+    commitRole({ role: tpl.role, roleName: tpl.name, inst: tpl.inst }, sel.player.brief ?? '', 'template', [`${tpl.name}: ${tpl.blurb}`]);
+  };
+
   const sendCoach = async (command: string) => {
     setCoachBusy(true);
     setCoachLog((l) => [...l, { from: 'you', text: command }]);
@@ -555,6 +606,11 @@ export function App() {
               onQuick={quickCoach}
               onMarkNearest={markNearest}
               live={locked}
+              aiReady={aiReady}
+              briefBusy={briefBusy}
+              report={briefReport && sel && briefReport.id === sel.player.id ? briefReport.report : null}
+              onApplyBrief={applyBrief}
+              onTemplate={applyTemplate}
             />
           )}
         </aside>

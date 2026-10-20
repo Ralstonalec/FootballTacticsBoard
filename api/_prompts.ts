@@ -1,4 +1,4 @@
-export type AIMode = 'feedback' | 'coach' | 'scenario' | 'explain' | 'decide';
+export type AIMode = 'feedback' | 'coach' | 'scenario' | 'explain' | 'decide' | 'role';
 
 const BOARD = `Board conventions:
 - Player x: 0 = own goal line, 1 = opponent goal line. y: 0 = the team's left, 1 = its right. "n" is the shirt number shown on the pitch.
@@ -48,4 +48,33 @@ Reply with ONLY a JSON object, no prose and no code fences:
 {"say": "<one sentence: your read of the situation>",
  "orders": [{"n": <your shirt number>, "order": "<name>", "seconds": <6..45>, "mark": <opponent n, only for mark>, "why": "<max 12 words>"}]}
 Rules: give orders to 0-5 players, only where they matter now; do not repeat an order a player already has unless extending it makes sense; never order the goalkeeper; keep the team balanced (do not send everyone forward or everyone back); react to possession: if you just lost the ball consider counter_press or drop, if you are building up consider support_short/overlap/run_behind, if the opponent has the ball in your half consider cover/mark/press. If the situation is fine, return an empty orders list.`,
+
+  role: `You turn a football coach's plain-English instruction about ONE player into that player's simulator settings.
+You receive the instruction, the player's current role, position and settings, and both teams so you can resolve things like "mark their number 10".
+
+Settings (all sliders 0..1 unless stated):
+- role: base position class, one of GK, CB, FB, WB, DM, CM, AM, W, ST (changes speed and default habits; only change it if the coach clearly redefines the player's position).
+- roam: freedom to leave his zone and follow the ball / find space. 0 = fixed to his zone.
+- press: how aggressively he closes the ball carrier down without the ball.
+- runs: how far beyond his spot he pushes when his team has the ball. 1 = on the last line, bombing forward.
+- dribble: willingness to carry/take players on rather than pass.
+- shoot: willingness to shoot, including from range.
+- width: -1 drifts inside (inverted / cuts in) .. +1 hugs the touchline.
+- passing: "safe" (keep the ball), "mixed", or "direct" (forward, riskier).
+- depth: -1 drops deep to link play / receive (false 9, playmaker, sweeper) .. +1 stays high on the last line (poacher). 0 = neutral.
+- lane: the channel he occupies, 0 = team's left touchline, 0.12 left wing, 0.3 left half-space, 0.5 centre, 0.7 right half-space, 0.88 right wing, 1 = right; null = wherever the formation puts him.
+- track: how hard he recovers/tracks back when the opponent has the ball. 0.5 is normal.
+- cross: 0 never delivers early/wide balls .. 1 crosses at every chance. 0.5 is normal.
+- mark: opponent shirt number to man-mark, or null for zonal.
+
+The coach may write several sentences with lots of detail. Read all of it. Translate every part that maps onto the settings above. Some details the simulator cannot represent (e.g. "weak left foot", "good in the air", "has a long throw", "plays better in big games"): list those under "unsupported" instead of guessing, and never invent settings for them.
+
+Reply with ONLY a JSON object, no prose and no code fences:
+{"roleName": "<2-4 word role label for this player, e.g. Deep-lying playmaker>",
+ "role": "<base role code, only if it should change, else omit>",
+ "inst": {<only the settings the instruction implies; omit the rest>},
+ "notes": ["<up to 5 short bullets: which words of the coach's text you turned into which setting, e.g. 'drops between the centre-backs -> depth -0.6'>"],
+ "unsupported": ["<parts of the text the simulator cannot model, if any>"],
+ "summary": "<one sentence on how the player will now behave>"}
+Use decisive values (0.1-0.2 for "rarely", 0.8-0.95 for "always/at every chance"). Do not invent settings. Left/right are from the player's own team's perspective (facing the opponent's goal).`,
 };

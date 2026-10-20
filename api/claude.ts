@@ -10,7 +10,7 @@ const DEFAULT_DECISION_MODEL = 'anthropic/claude-haiku-4.5';
 const textModel = () => process.env.OPENROUTER_TEXT_MODEL || process.env.OPENROUTER_MODEL || DEFAULT_TEXT_MODEL;
 const decisionModel = () => process.env.OPENROUTER_DECISION_MODEL || DEFAULT_DECISION_MODEL;
 const MAX_CONTENT = 40_000;
-const MAX_TOKENS: Record<AIMode, number> = { feedback: 1200, coach: 700, scenario: 900, explain: 900, decide: 600 };
+const MAX_TOKENS: Record<AIMode, number> = { feedback: 1200, coach: 700, scenario: 900, explain: 900, decide: 600, role: 500 };
 
 // Best-effort per-instance rate limit (serverless instances do not share memory;
 // use Vercel Firewall / Upstash for a hard limit).

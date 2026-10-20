@@ -65,6 +65,7 @@ export interface TeamStats {
   ownThirdLosses: number;
   finalThirdEntries: number;
   counterShots: number;
+  crosses: number;
   entriesByChannel: [number, number, number]; // final-third entries by route: attacking-perspective left / centre / right
   xgByChannel: [number, number, number]; // xG by the route the attack came in on
   touchGrid: number[];
@@ -95,13 +96,18 @@ export const ORDERS: Record<string, { label: string; patch: Partial<Instructions
 export const emptyStats = (): TeamStats => ({
   possessionT: 0, passes: 0, passesDone: 0, shots: 0, onTarget: 0, goals: 0, xg: 0,
   tackles: 0, interceptions: 0, highRecoveries: 0, ownThirdLosses: 0, finalThirdEntries: 0,
-  counterShots: 0, entriesByChannel: [0, 0, 0], xgByChannel: [0, 0, 0], touchGrid: new Array(GX * GY).fill(0),
+  counterShots: 0, crosses: 0, entriesByChannel: [0, 0, 0], xgByChannel: [0, 0, 0], touchGrid: new Array(GX * GY).fill(0),
 });
 
 export interface MatchEvent { t: number; team: TeamIdx; text: string; kind: 'goal' | 'shot' | 'coach' | 'ai' }
 
 const attDir = (team: TeamIdx) => (team === 0 ? 1 : -1);
 const progress = (team: TeamIdx, x: number) => (team === 0 ? x / PW : 1 - x / PW);
+
+/** A wide player in the attacking third (cross / cut-back territory). */
+const isWideDelivery = (team: TeamIdx, p: { x: number; y: number }) => progress(team, p.x) > 0.7 && Math.abs(p.y - PH / 2) > 18;
+/** Receiver inside the penalty area. */
+const inBox = (team: TeamIdx, m: { x: number; y: number }) => progress(team, m.x) > 0.84 && Math.abs(m.y - PH / 2) < 20;
 
 export function xgAt(team: TeamIdx, x: number, y: number): number {
   const gx = team === 0 ? PW : 0;
@@ -383,9 +389,20 @@ export class Match {
     let ny = 0.5 + (spec.y - 0.5) * (0.65 + 0.7 * tac.width);
     const side = ny < 0.5 ? -1 : 1;
     ny += inst.width * 0.1 * side;
+    if (inst.lane != null) ny = lerp(ny, inst.lane, 0.75); // role: occupy a specific channel
     nx += (tac.lineHeight - 0.5) * 0.3 * (1 - nx);
     if (inPoss) nx += inst.runs * 0.16;
     else nx -= (1 - inst.runs) * 0.04;
+    const depthPref = inst.depth ?? 0; // role: drop deep to link play (-) or stay high (+)
+    if (depthPref > 0) nx += depthPref * (inPoss ? 0.3 : 0.15);
+    else if (depthPref < 0) {
+      if (inPoss) {
+        // drops to receive: comes towards the ball instead of waiting up the pitch (false 9, playmaker, sweeper)
+        const bn = progress(p.team, ball.x);
+        nx = lerp(nx, Math.min(nx, Math.max(0.2, bn - 0.06)), Math.min(1, -depthPref * 1.4));
+      } else nx += depthPref * 0.15;
+    }
+    if (!inPoss) nx -= ((inst.track ?? 0.5) - 0.5) * 0.24; // role: recover / track back
     nx = clamp(nx, 0.02, 0.98);
     ny = clamp(ny, 0.03, 0.97);
     let [wx, wy] = toWorld(p.team, nx, ny);
@@ -417,6 +434,8 @@ export class Match {
       if (p.intent === 'Supporting the ball') {
         if ((spec.role === 'FB' || spec.role === 'WB') && inst.runs > 0.55) p.intent = 'Overlapping / pushing on';
         else if (inst.runs >= 0.7) p.intent = 'Making a forward run';
+        else if (depthPref <= -0.3) p.intent = 'Dropping deep to link play';
+        else if (inst.lane != null && inst.roam < 0.5) p.intent = 'Occupying the half-space';
         else if (inst.roam > 0.6) p.intent = 'Finding space';
         else if (inst.runs < 0.25) p.intent = 'Staying back as cover';
       }
@@ -480,7 +499,7 @@ export class Match {
 
     if (!inPoss && !pressing) {
       // recover: stay within a block of the ball instead of waiting up the pitch
-      const lead = 14 + 26 * tac.lineHeight;
+      const lead = (14 + 26 * tac.lineHeight) * (1 - 1.2 * ((inst.track ?? 0.5) - 0.5));
       const capped = dir > 0 ? Math.min(wx, ball.x + lead) : Math.max(wx, ball.x - lead);
       if (Math.abs(capped - wx) > 1) p.intent = 'Recovering shape';
       wx = capped;
@@ -584,6 +603,9 @@ export class Match {
       let s = pS * ((W.prog * prog) / 25 + W.keep) - (W.dist * dm) / 40;
       s += (this.rng.next() - 0.5) * 0.3;
       if (m.spec.role === 'GK' && p.spec.role !== 'GK') s -= 0.6;
+      // role: wide players in the final third deliver into the box (or keep it, if they dislike crossing)
+      const crossPref = (inst.cross ?? 0.5) - 0.5;
+      if (crossPref !== 0 && isWideDelivery(team, p) && inBox(team, m)) s += crossPref * 1.8;
       if (s > bestS) { bestS = s; best = m; }
     }
 
@@ -627,6 +649,7 @@ export class Match {
     ball.owner = null;
     ball.lastTeam = p.team;
     this.stats[p.team].passes++;
+    if (isWideDelivery(p.team, p) && inBox(p.team, m)) this.stats[p.team].crosses++;
     // nearest opposing defender attempts to cut it out
     let nd: SimPlayer | null = null;
     let ndd = 8;
