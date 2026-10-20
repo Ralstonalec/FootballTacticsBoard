@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pitch, HeatMode } from './components/Pitch';
+import { Tabs } from './components/ui';
 import { TeamPanel } from './components/TeamPanel';
 import { PlayerPanel } from './components/PlayerPanel';
 import { SimPanel } from './components/SimPanel';
@@ -12,6 +13,8 @@ import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
 import { askCoach, askDecisions, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
+import { BatchPanel } from './components/SimPanel';
+import { AISettings } from './components/AISettings';
 import { DecisionPanel, DecisionLogEntry, DecisionOpts } from './components/DecisionPanel';
 import { ORDERS } from './engine/sim';
 import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
@@ -148,7 +151,19 @@ export function App() {
   dec.current.key = browserKey;
   const activeDecisionModel = serverAI ? serverInfo.decisionModel ?? '' : decisionModel;
 
+  const [aiOpen, setAiOpen] = useState(false);
+  const [leftTab, setLeftTab] = useState<'team' | 'player'>('team');
+  const [rightTab, setRightTab] = useState<'match' | 'coach' | 'insights'>('match');
   const locked = matchRef.current !== null;
+  const mode: 'board' | 'match' | 'lab' = lab ? 'lab' : locked ? 'match' : 'board';
+  const goMode = (m: 'board' | 'match' | 'lab') => {
+    if (m === mode) return;
+    if (lab) exitLab();
+    else if (matchRef.current) stopMatch();
+    if (m === 'match') startMatch();
+    if (m === 'lab') startLab();
+    if (m !== 'board') setRightTab('match');
+  };
   const teams: [Team, Team] = [home, away];
   const setTeam = useCallback((idx: 0 | 1, fn: (t: Team) => Team) => {
     (idx === 0 ? setHome : setAway)(fn);
@@ -468,185 +483,274 @@ export function App() {
     }
   };
 
+  const m = matchRef.current;
+  const rightTabs = [
+    { id: 'match' as const, label: mode === 'lab' ? '🎞 Lab' : '▶ Match' },
+    { id: 'coach' as const, label: '🎙 Coach' },
+    { id: 'insights' as const, label: '💡 Insights', badge: staticF.filter((f) => f.severity === 'warn' || f.severity === 'risk').length || undefined },
+  ];
+
   return (
     <div className="app">
       <header className="topbar">
-        <h1>⚽ Tactics Board</h1>
+        <div className="brand">
+          <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+            <rect x="1" y="5" width="30" height="22" rx="4" fill="#16a34a" />
+            <path d="M16 5v22M1 16h0M31 16h0" stroke="#fff" strokeWidth="1.5" opacity=".8" />
+            <circle cx="16" cy="16" r="4.5" fill="none" stroke="#fff" strokeWidth="1.5" opacity=".8" />
+            <circle cx="9" cy="12" r="2" fill="#3b82f6" /><circle cx="23" cy="20" r="2" fill="#ef4444" />
+          </svg>
+          <div><h1>Tactics Board</h1><span>design · simulate · coach</span></div>
+        </div>
+        <nav className="modes" aria-label="Mode">
+          <button className={mode === 'board' ? 'on' : ''} onClick={() => goMode('board')}><b>✎</b> Board</button>
+          <button className={mode === 'match' ? 'on' : ''} onClick={() => goMode('match')}><b>▶</b> Live match</button>
+          <button className={mode === 'lab' ? 'on' : ''} onClick={() => goMode('lab')}><b>🎞</b> Shape lab</button>
+        </nav>
+        <button className={`aistatus ${serverAI ? 'ok' : apiKey.trim() ? 'dev' : 'bad'}`} onClick={() => setAiOpen(true)} title="AI settings and connection test">
+          <i /> {serverAI ? 'AI ready' : apiKey.trim() ? 'AI: local key' : 'AI not set up'}
+        </button>
+        <div className="whose"><span>Your team</span>
         <div className="seg" role="group" aria-label="Team being edited">
-          <button className={editing === 0 ? 'on home' : 'home'} onClick={() => { setEditing(0); setSelectedId(null); }}>Edit Home</button>
-          <button className={editing === 1 ? 'on away' : 'away'} onClick={() => { setEditing(1); setSelectedId(null); }}>Edit Away</button>
-        </div>
-        <div className="tools">
-          <button className={lab ? 'on' : ''} onClick={lab ? exitLab : startLab} disabled={locked && !lab} title="Animated diagram of how both formations move with the ball">
-            {lab ? '✕ Exit Shape Lab' : '🎞 Shape Lab'}
-          </button>
-          <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={locked} title="Role of the next player you add">
-            {(['GK', 'CB', 'FB', 'WB', 'DM', 'CM', 'AM', 'W', 'ST'] as Role[]).map((r) => <option key={r}>{r}</option>)}
-          </select>
-          <button className={addMode ? 'on' : ''} onClick={() => setAddMode(!addMode)} disabled={locked}>{addMode ? 'Click pitch to place…' : '＋ Add player'}</button>
-          <label><input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} /> snap</label>
-          <label><input type="checkbox" checked={showRuns} onChange={(e) => setShowRuns(e.target.checked)} /> run arrows</label>
-        </div>
+          <button className={editing === 0 ? 'on home' : 'home'} onClick={() => { setEditing(0); setSelectedId(null); }}>● {home.name || 'Home'}</button>
+          <button className={editing === 1 ? 'on away' : 'away'} onClick={() => { setEditing(1); setSelectedId(null); }}>● {away.name || 'Away'}</button>
+        </div></div>
       </header>
 
       <main className="layout">
-        <aside className="col">
-          <TeamPanel
-            key={editing}
-            team={sideTeam}
-            teamIdx={editing}
-            disabled={locked}
-            onFormation={(f) => { setTeam(editing, (t) => ({ ...buildTeam(t.name, f, editing), tactics: t.tactics })); setSelectedId(null); }}
-            onTactics={(patch) => setTeam(editing, (t) => ({ ...t, tactics: { ...t.tactics, ...patch } }))}
-            onRename={(name) => setTeam(editing, (t) => ({ ...t, name }))}
-            onMirror={() => setTeam(editing, (t) => ({ ...t, players: t.players.map((p) => ({ ...p, y: 1 - p.y })) }))}
-            onReplace={(t) => { setTeam(editing, () => t); setSelectedId(null); }}
+        <aside className="col left">
+          <Tabs
+            value={leftTab}
+            onChange={setLeftTab}
+            tabs={[
+              { id: 'team', label: '👥 Team' },
+              { id: 'player', label: '🎯 Player', badge: sel ? `#${sel.index + 1}` : undefined },
+            ]}
           />
-          <PlayerPanel
-            player={sel?.player ?? null}
-            number={(sel?.index ?? 0) + 1}
-            opp={sel ? teams[1 - sel.team] : oppTeam}
-            disabled={locked}
-            onChange={(patch) => sel && patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, ...patch }))}
-            onInst={(patch: Partial<Instructions>) => sel && patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, inst: { ...p.inst, ...patch } }))}
-            onApplyRole={() => sel && setTeam(sel.team, (t) => ({
-              ...t,
-              players: t.players.map((p) => (p.role === sel.player.role ? { ...p, inst: { ...sel.player.inst, mark: null } } : p)),
-            }))}
-            onRemove={() => sel && removePlayer(sel.player.id)}
-            onQuick={quickCoach}
-            onMarkNearest={markNearest}
-            live={locked}
-          />
+          {leftTab === 'team' ? (
+            <TeamPanel
+              key={editing}
+              team={sideTeam}
+              teamIdx={editing}
+              disabled={locked}
+              onFormation={(f) => { setTeam(editing, (t) => ({ ...buildTeam(t.name, f, editing), tactics: t.tactics })); setSelectedId(null); }}
+              onTactics={(patch) => setTeam(editing, (t) => ({ ...t, tactics: { ...t.tactics, ...patch } }))}
+              onRename={(name) => setTeam(editing, (t) => ({ ...t, name }))}
+              onMirror={() => setTeam(editing, (t) => ({ ...t, players: t.players.map((p) => ({ ...p, y: 1 - p.y })) }))}
+              onReplace={(t) => { setTeam(editing, () => t); setSelectedId(null); }}
+            />
+          ) : (
+            <PlayerPanel
+              player={sel?.player ?? null}
+              number={(sel?.index ?? 0) + 1}
+              opp={sel ? teams[1 - sel.team] : oppTeam}
+              disabled={locked}
+              onChange={(patch) => sel && patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, ...patch }))}
+              onInst={(patch: Partial<Instructions>) => sel && patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, inst: { ...p.inst, ...patch } }))}
+              onApplyRole={() => sel && setTeam(sel.team, (t) => ({
+                ...t,
+                players: t.players.map((p) => (p.role === sel.player.role ? { ...p, inst: { ...sel.player.inst, mark: null } } : p)),
+              }))}
+              onRemove={() => sel && removePlayer(sel.player.id)}
+              onQuick={quickCoach}
+              onMarkNearest={markNearest}
+              live={locked}
+            />
+          )}
         </aside>
 
         <section className="center">
-          <Pitch
-            home={home}
-            away={away}
-            editing={editing}
-            selectedId={selectedId}
-            highlightIds={highlight}
-            match={matchRef.current}
-            heat={heat}
-            locked={locked}
-            addMode={addMode}
-            snap={snap}
-            showRuns={showRuns}
-            onSelect={(id) => { setSelectedId(id); setHighlight([]); }}
-            onMove={(t, id, nx, ny) => patchPlayer(t, id, (p) => ({ ...p, x: nx, y: ny }))}
-            onAdd={(nx, ny) => { addPlayer(nx, ny); setAddMode(false); }}
-            labMode={lab}
-            shape={lab && labUI.shape}
-            labels={lab ? labUI.labels : 'off'}
-            trail={lab ? labRef.current.trail : undefined}
-            onBallSet={(x, y) => {
-              const L = labRef.current;
-              L.playing = false; L.phase = 'idle'; L.tx = x; L.ty = y;
-              patchLab({ playing: false });
-            }}
-          />
-          <p className="hint">
-            Home 🔵 attacks right, Away 🔴 attacks left. Drag the {editing === 0 ? 'blue' : 'red'} players to build any formation; click anyone to edit their instructions.
-            {locked && ' Editing is locked during a live match — press "Back to edit".'}
-          </p>
+          {m && !lab ? (
+            <div className="hud" data-tick={tick}>
+              <span className="side home">{m.teams[0].name}</span>
+              <div className="score"><b>{m.score[0]}</b><i>–</i><b>{m.score[1]}</b></div>
+              <span className="side away">{m.teams[1].name}</span>
+              <div className="clockpill">{m.clock}{m.finished ? ' · FT' : ''}</div>
+              <button className="icon" onClick={() => setPlaying((p) => !p)} disabled={m.finished} title={playing ? 'Pause' : 'Play'}>{playing ? '⏸' : '▶'}</button>
+              {decThinking && <span className="thinking">🧠 thinking…</span>}
+            </div>
+          ) : (
+            <div className="toolbar">
+              {mode === 'board' ? (
+                <>
+                  <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} title="Role of the next player you add">
+                    {(['GK', 'CB', 'FB', 'WB', 'DM', 'CM', 'AM', 'W', 'ST'] as Role[]).map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                  <button className={addMode ? 'on' : ''} onClick={() => setAddMode(!addMode)}>{addMode ? 'Click the pitch to place…' : '＋ Add player'}</button>
+                  <label className="toggle"><input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} /> Snap to grid</label>
+                  <label className="toggle"><input type="checkbox" checked={showRuns} onChange={(e) => setShowRuns(e.target.checked)} /> Run arrows</label>
+                </>
+              ) : (
+                <span className="muted">Click or drag the pitch to move the ball · labels show each player's current decision</span>
+              )}
+            </div>
+          )}
+          <div className="pitch-frame">
+            <Pitch
+              home={home}
+              away={away}
+              editing={editing}
+              selectedId={selectedId}
+              highlightIds={highlight}
+              match={matchRef.current}
+              heat={heat}
+              locked={locked}
+              addMode={addMode}
+              snap={snap}
+              showRuns={showRuns}
+              onSelect={(id) => { setSelectedId(id); setHighlight([]); if (id) setLeftTab('player'); }}
+              onMove={(t, id, nx, ny) => patchPlayer(t, id, (p) => ({ ...p, x: nx, y: ny }))}
+              onAdd={(nx, ny) => { addPlayer(nx, ny); setAddMode(false); setLeftTab('player'); }}
+              labMode={lab}
+              shape={lab && labUI.shape}
+              labels={lab ? labUI.labels : 'off'}
+              trail={lab ? labRef.current.trail : undefined}
+              onBallSet={(x, y) => {
+                const L = labRef.current;
+                L.playing = false; L.phase = 'idle'; L.tx = x; L.ty = y;
+                patchLab({ playing: false });
+              }}
+            />
+          </div>
+          <div className="legend">
+            <span><i className="dot home" /> {home.name} attacks →</span>
+            <span><i className="dot away" /> ← {away.name} attacks</span>
+            {mode === 'board' && <span className="muted">Drag the {editing === 0 ? 'blue' : 'red'} players · click anyone to edit</span>}
+            {mode === 'match' && <span className="muted">Select any player to coach them live</span>}
+          </div>
+          {m && !lab ? (
+            <div className="strip" data-tick={tick}>
+              <h4>Match feed</h4>
+              <ul>
+                {m.events.length === 0 && <li className="shot">Kick-off…</li>}
+                {m.events.slice(-7).reverse().map((e, i) => (
+                  <li key={i} className={e.kind}>
+                    <span>{e.team === 0 ? '🔵' : '🔴'} {e.text}</span>
+                    <small>{Math.floor(e.t / 60)}′</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : mode === 'board' ? (
+            <div className="strip">
+              <h4>{sideTeam.name}: top issues</h4>
+              <ul>
+                {staticF.filter((f) => f.severity === 'risk' || f.severity === 'warn').slice(0, 3).map((f, i) => (
+                  <li key={i} className={`finding ${f.severity}`} onClick={() => setHighlight(f.playerIds ?? [])}>
+                    <span>{f.severity === 'risk' ? '🛑' : '⚠️'} {f.title}</span>
+                    {f.playerIds?.length ? <small>click to highlight</small> : null}
+                  </li>
+                ))}
+                {!staticF.some((f) => f.severity === 'risk' || f.severity === 'warn') && <li className="finding good"><span>✅ No structural problems detected</span></li>}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
-        <aside className="col">
-          {lab && matchRef.current ? (
-            <ShapeLabPanel
-              match={matchRef.current}
-              tick={tick}
-              ui={labUI}
-              aiReady={aiReady}
-              selected={(() => {
-                const sp = selectedId ? matchRef.current.findPlayer(selectedId) : null;
-                const f = find(selectedId);
-                return sp && f ? { label: `#${f.index + 1} ${f.player.role} (${f.team === 0 ? 'home' : 'away'})`, intent: sp.intent } : null;
-              })()}
-              onPlaybook={(i) => loadScenario(PLAYBOOKS[i])}
-              onPlay={() => {
-                const L = labRef.current;
-                if (!L.scenario) return;
-                if (L.phase === 'idle') beginStep(L.step >= L.scenario.steps.length - 1 ? 0 : L.step);
-                L.playing = !L.playing;
-                patchLab({ playing: L.playing });
-              }}
-              onRestart={() => { const L = labRef.current; if (L.scenario) { loadScenario(L.scenario); } }}
-              onSpeed={(v) => { labRef.current.speed = v; patchLab({ speed: v }); }}
-              onPoss={(p) => { labRef.current.poss = p; patchLab({ poss: p }); }}
-              onShape={(v) => patchLab({ shape: v })}
-              onLabels={(v) => patchLab({ labels: v })}
-              onGenerate={generateScenario}
-              onExplain={explainScenario}
-              onExit={exitLab}
-            />
-          ) : (
-          <SimPanel
-            match={matchRef.current}
-            tick={tick}
-            playing={playing}
-            speed={speed}
-            heat={heat}
-            batchN={batchN}
-            batchBusy={batchBusy}
-            batchDone={batchDone}
-            agg={agg}
-            onStart={startMatch}
-            onPlayPause={() => setPlaying((p) => !p)}
-            onStop={stopMatch}
-            onSpeed={setSpeed}
-            onHeat={setHeat}
-            onBatchN={setBatchN}
-            onBatch={runBatchNow}
-            onFinish={finishMatch}
-          />
+        <aside className="col right">
+          <Tabs value={rightTab} onChange={setRightTab} tabs={rightTabs} />
+          {rightTab === 'match' && (
+            <>
+              {lab && matchRef.current ? (
+                <ShapeLabPanel
+                  match={matchRef.current}
+                  tick={tick}
+                  ui={labUI}
+                  aiReady={aiReady}
+                  selected={(() => {
+                    const sp = selectedId ? matchRef.current.findPlayer(selectedId) : null;
+                    const f = find(selectedId);
+                    return sp && f ? { label: `#${f.index + 1} ${f.player.role} (${f.team === 0 ? 'home' : 'away'})`, intent: sp.intent } : null;
+                  })()}
+                  onPlaybook={(i) => loadScenario(PLAYBOOKS[i])}
+                  onPlay={() => {
+                    const L = labRef.current;
+                    if (!L.scenario) return;
+                    if (L.phase === 'idle') beginStep(L.step >= L.scenario.steps.length - 1 ? 0 : L.step);
+                    L.playing = !L.playing;
+                    patchLab({ playing: L.playing });
+                  }}
+                  onRestart={() => { const L = labRef.current; if (L.scenario) { loadScenario(L.scenario); } }}
+                  onSpeed={(v) => { labRef.current.speed = v; patchLab({ speed: v }); }}
+                  onPoss={(p) => { labRef.current.poss = p; patchLab({ poss: p }); }}
+                  onShape={(v) => patchLab({ shape: v })}
+                  onLabels={(v) => patchLab({ labels: v })}
+                  onGenerate={generateScenario}
+                  onExplain={explainScenario}
+                  onExit={() => goMode('board')}
+                />
+              ) : (
+                <SimPanel
+                  match={matchRef.current}
+                  tick={tick}
+                  playing={playing}
+                  speed={speed}
+                  heat={heat}
+                  onStart={() => goMode('match')}
+                  onPlayPause={() => setPlaying((p) => !p)}
+                  onStop={() => goMode('board')}
+                  onSpeed={setSpeed}
+                  onHeat={setHeat}
+                  onFinish={finishMatch}
+                />
+              )}
+              {!lab && matchRef.current && (
+                <DecisionPanel
+                  opts={decOpts}
+                  onOpts={(o) => setDecOpts((d) => ({ ...d, ...o }))}
+                  aiReady={aiReady}
+                  model={activeDecisionModel}
+                  calls={decCalls}
+                  thinking={decThinking}
+                  log={decLog}
+                />
+              )}
+            </>
           )}
-          {!lab && matchRef.current && (
-            <DecisionPanel
-              opts={decOpts}
-              onOpts={(o) => setDecOpts((d) => ({ ...d, ...o }))}
+          {rightTab === 'coach' && (
+            <CoachPanel
               aiReady={aiReady}
-              model={activeDecisionModel}
-              calls={decCalls}
-              thinking={decThinking}
-              log={decLog}
+              busy={coachBusy}
+              live={locked}
+              log={coachLog}
+              selectedLabel={sel && sel.team === side ? `#${sel.index + 1} ${sel.player.role}` : null}
+              onSend={sendCoach}
             />
           )}
-          <CoachPanel
-            aiReady={aiReady}
-            busy={coachBusy}
-            live={locked}
-            log={coachLog}
-            selectedLabel={sel && sel.team === side ? `#${sel.index + 1} ${sel.player.role}` : null}
-            onSend={sendCoach}
-          />
-          <FeedbackPanel
-            sideName={sideTeam.name}
-            findings={staticF}
-            simFindings={simF}
-            idea={idea}
-            ideaMiss={ideaMiss}
-            claudeText={claudeText}
-            claudeBusy={claudeBusy}
-            claudeError={claudeError}
-            aiReady={aiReady}
-            serverAI={serverAI}
-            apiKey={apiKey}
-            textModel={serverAI ? serverInfo.textModel ?? '' : textModel}
-            decisionModel={serverAI ? serverInfo.decisionModel ?? '' : decisionModel}
-            onApiKey={setApiKey}
-            onTextModel={setTextModel}
-            onDecisionModel={setDecisionModel}
-            onAnalyze={analyze}
-            onApplyIdea={() => idea?.apply && setTeam(editing, (t) => idea.apply!(t))}
-            onAsk={ask}
-            onHighlight={setHighlight}
-          />
-          {aggStale && agg && <p className="muted">Batch results are out of date: you changed the board since they ran.</p>}
+          {rightTab === 'insights' && (
+            <>
+              <BatchPanel batchN={batchN} batchBusy={batchBusy} batchDone={batchDone} agg={agg} stale={aggStale} onBatchN={setBatchN} onBatch={runBatchNow} />
+              <FeedbackPanel
+                sideName={sideTeam.name}
+                findings={staticF}
+                simFindings={simF}
+                idea={idea}
+                ideaMiss={ideaMiss}
+                claudeText={claudeText}
+                claudeBusy={claudeBusy}
+                claudeError={claudeError}
+                aiReady={aiReady}
+                onOpenSettings={() => setAiOpen(true)}
+                onAnalyze={analyze}
+                onApplyIdea={() => idea?.apply && setTeam(editing, (t) => idea.apply!(t))}
+                onAsk={ask}
+                onHighlight={setHighlight}
+              />
+            </>
+          )}
         </aside>
       </main>
+      <AISettings
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        serverInfo={serverInfo}
+        apiKey={apiKey}
+        textModel={textModel}
+        decisionModel={decisionModel}
+        onApiKey={setApiKey}
+        onTextModel={setTextModel}
+        onDecisionModel={setDecisionModel}
+      />
     </div>
   );
 }
-

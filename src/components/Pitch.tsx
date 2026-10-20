@@ -157,13 +157,21 @@ function draw(c: HTMLCanvasElement, p: PitchProps, size: { w: number; h: number;
   const Y = (wy: number) => MARGIN + wy * S;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // grass
-  ctx.fillStyle = '#15803d';
+  // grass: base gradient, mowing stripes, soft floodlight vignette
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#15803d');
+  bg.addColorStop(1, '#166534');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 12; i++) {
-    ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.035)';
-    ctx.fillRect(X((i * PW) / 12), Y(0), (PW / 12) * S, PH * S);
+  for (let i = 0; i < 14; i++) {
+    ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.045)';
+    ctx.fillRect(X((i * PW) / 14), Y(0), (PW / 14) * S, PH * S);
   }
+  const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, w * 0.7);
+  vg.addColorStop(0, 'rgba(255,255,255,0.07)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
 
   // heat map
   if (p.match && p.heat !== 'off') {
@@ -297,11 +305,24 @@ function draw(c: HTMLCanvasElement, p: PitchProps, size: { w: number; h: number;
         ctx.arc(X(x), Y(y), r + 4 + Math.sin(time / 180) * 1.5, 0, Math.PI * 2);
         ctx.stroke();
       }
-      ctx.fillStyle = COLORS[ti];
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
+      const grad = ctx.createRadialGradient(X(x) - r * 0.35, Y(y) - r * 0.4, r * 0.1, X(x), Y(y), r);
+      grad.addColorStop(0, ti === 0 ? '#7db4ff' : '#ff8f8f');
+      grad.addColorStop(1, COLORS[ti]);
+      ctx.fillStyle = grad;
       ctx.beginPath(); ctx.arc(X(x), Y(y), r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (pl.id === sel) {
+        ctx.strokeStyle = 'rgba(253,224,71,0.35)';
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.arc(X(x), Y(y), r + 3, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.lineWidth = pl.id === sel ? 3 : 1.5;
-      ctx.strokeStyle = pl.id === sel ? '#fde047' : 'rgba(255,255,255,0.9)';
-      ctx.stroke();
+      ctx.strokeStyle = pl.id === sel ? '#fde047' : 'rgba(255,255,255,0.92)';
+      ctx.beginPath(); ctx.arc(X(x), Y(y), r, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.font = `bold ${Math.round(r * 0.95)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
@@ -340,9 +361,13 @@ function draw(c: HTMLCanvasElement, p: PitchProps, size: { w: number; h: number;
   // ball
   if (m) {
     const b = m.ball;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,255,255,0.8)';
+    ctx.shadowBlur = 10;
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(X(b.x), Y(b.y), Math.max(4, S * 0.45), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
   }
 }

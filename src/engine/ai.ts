@@ -274,3 +274,21 @@ export async function askDecisions(opts: { match: Match; side: TeamIdx; browserK
   const text = await callAI('decide', buildDecisionState(opts.match, opts.side), opts.browserKey);
   return parseDecisions(text, opts.match, opts.side);
 }
+
+export interface DiagCheck { name: string; ok: boolean; detail: string }
+
+/** Ask the server to test every link in the chain (key present, valid, models exist, models answer). */
+export async function runDiagnostics(): Promise<DiagCheck[]> {
+  let res: Response;
+  try { res = await fetch(`${ENDPOINT}?check=1`); } catch { throw new Error('Could not reach /api/claude at all (network error).'); }
+  const text = await res.text();
+  let j: { checks?: DiagCheck[]; error?: string } = {};
+  try { j = JSON.parse(text); } catch { /* not JSON */ }
+  if (j.checks) return j.checks;
+  if (res.status >= 500 && !(() => { try { JSON.parse(text); return true; } catch { return false; } })())
+    throw new Error(`The /api/claude function crashed on the server (HTTP ${res.status}) before it could answer. Open Vercel, then the project, then Logs, filter to /api/claude and look at the error (a missing module or a deploy problem is the usual cause). If you just deployed a fix, make sure you are on the new deployment.`);
+  const isJson = (() => { try { JSON.parse(text); return true; } catch { return false; } })();
+  if (!isJson)
+    throw new Error(`There is no working /api/claude function here (got ${res.status === 200 ? 'a non-API page' : 'HTTP ' + res.status}). On Vercel this usually means the api/ folder was not deployed (check the project's Root Directory is the repo root and that the latest deployment succeeded). In plain \`npm run dev\` there is no API at all: use \`npx vercel dev\`, or paste a key into the local-dev field below.`);
+  throw new Error(j.error ?? `Unexpected response (HTTP ${res.status}).`);
+}

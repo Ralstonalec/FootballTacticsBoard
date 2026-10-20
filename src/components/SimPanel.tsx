@@ -5,24 +5,20 @@ import { Section } from './ui';
 
 export function SimPanel(props: {
   match: Match | null; tick: number; playing: boolean; speed: number; heat: HeatMode;
-  batchN: number; batchBusy: boolean; batchDone: number; agg: Aggregate | null;
   onStart: () => void; onPlayPause: () => void; onStop: () => void; onSpeed: (s: number) => void;
-  onHeat: (h: HeatMode) => void; onBatchN: (n: number) => void; onBatch: () => void; onFinish: () => void;
+  onHeat: (h: HeatMode) => void; onFinish: () => void;
 }) {
   const { match: m } = props;
   const pct = (a: number, b: number) => (a + b > 0 ? Math.round((a / (a + b)) * 100) : 50);
   return (
     <Section title="Live simulation">
       {!m ? (
-        <button className="primary" onClick={props.onStart}>▶ Start match</button>
+        <>
+          <p className="muted">Play a full 90-minute match between the two teams. Pause any time, click a player to coach them, or switch on the AI decision model.</p>
+          <button className="primary wide" onClick={props.onStart}>▶ Start match</button>
+        </>
       ) : (
         <>
-          <div className="scoreboard">
-            <span className="home">{m.teams[0].name}</span>
-            <b>{m.score[0]} – {m.score[1]}</b>
-            <span className="away">{m.teams[1].name}</span>
-          </div>
-          <div className="clock">{m.clock}{m.finished ? ' · full time' : ''}</div>
           <div className="row">
             <button onClick={props.onPlayPause} disabled={m.finished}>{props.playing ? '⏸ Pause' : '▶ Play'}</button>
             <select value={props.speed} onChange={(e) => props.onSpeed(Number(e.target.value))}>
@@ -33,8 +29,8 @@ export function SimPanel(props: {
           <div className="row">
             <select value={props.heat} onChange={(e) => props.onHeat(e.target.value as HeatMode)}>
               <option value="off">Heat map: off</option>
-              <option value="home">Heat map: home ball activity</option>
-              <option value="away">Heat map: away ball activity</option>
+              <option value="home">Heat map: Home</option>
+              <option value="away">Heat map: Away</option>
             </select>
             <button onClick={props.onStop}>✕ Back to edit</button>
           </div>
@@ -54,15 +50,19 @@ export function SimPanel(props: {
               ))}
             </tbody>
           </table>
-          <ul className="events">
-            {m.events.slice(-6).reverse().map((e, i) => (
-              <li key={i} className={e.kind}>{Math.floor(e.t / 60)}′ {e.team === 0 ? '🔵' : '🔴'} {e.text}</li>
-            ))}
-          </ul>
         </>
       )}
-      <h4>Batch test</h4>
-      <p className="muted">Plays many full matches at once to find patterns. The feedback panel then reports on the results.</p>
+    </Section>
+  );
+}
+
+export function BatchPanel(props: {
+  batchN: number; batchBusy: boolean; batchDone: number; agg: Aggregate | null; stale: boolean;
+  onBatchN: (n: number) => void; onBatch: () => void;
+}) {
+  return (
+    <Section title="🧪 Batch test" right={props.stale && props.agg ? <span className="tag warn">out of date</span> : undefined}>
+      <p className="muted">Plays many full matches in seconds to find patterns. The findings appear under “From simulation” below.</p>
       <div className="row">
         <select value={props.batchN} onChange={(e) => props.onBatchN(Number(e.target.value))} disabled={props.batchBusy}>
           {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} matches</option>)}

@@ -18,14 +18,14 @@ export function DecisionPanel(props: {
       <label className="check"><input type="checkbox" checked={opts.away} disabled={!props.aiReady} onChange={(e) => props.onOpts({ away: e.target.checked })} /> AI decides for <b className="away">Away</b></label>
       <div className="row">
         <select value={opts.every} onChange={(e) => props.onOpts({ every: Number(e.target.value) })} title="Match-seconds between decisions for each team">
-          {[10, 20, 40, 90].map((s) => <option key={s} value={s}>every {s}s of match time</option>)}
+          {[10, 20, 40, 90].map((s) => <option key={s} value={s}>every {s}s</option>)}
         </select>
         <select value={opts.cap} onChange={(e) => props.onOpts({ cap: Number(e.target.value) })} title="Maximum model calls per match (cost control)">
           {[30, 80, 200, 500].map((c) => <option key={c} value={c}>max {c} calls</option>)}
         </select>
       </div>
       <label className="check"><input type="checkbox" checked={opts.wait} onChange={(e) => props.onOpts({ wait: e.target.checked })} /> pause the match while the AI thinks</label>
-      {!props.aiReady && <p className="muted">AI is not configured: set OPENROUTER_API_KEY on Vercel (or paste a key in ⚙ for local dev).</p>}
+      {!props.aiReady && <p className="muted">AI is not configured: set OPENROUTER_API_KEY on Vercel (see the 🤖 AI button, top right).</p>}
       {props.aiReady && props.model && <p className="muted">Decision model: <code>{props.model}</code></p>}
       <ul className="coach-log">
         {props.log.slice(-6).reverse().map((l, i) => (
