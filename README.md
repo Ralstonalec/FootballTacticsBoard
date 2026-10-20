@@ -28,7 +28,7 @@ npm run simtest -- 30 4-3-3 4-4-2 42   # headless calibration: matches, home for
     Click a finding to highlight the players involved.
   - *Your idea* – type an idea ("high press with a back three and a false 9") and the offline interpreter explains the pros/risks
     and can apply it to the board.
-  - *Ask Claude* – with an Anthropic API key (⚙ in the feedback panel, stored only in your browser) Claude critiques free-form
+  - *Ask AI* – with an OpenRouter key (server-side on Vercel, or ⚙ for local dev) the model critiques free-form
     ideas using your exact setup and the latest simulation results.
 
 ## Live coaching
@@ -44,13 +44,13 @@ Select any player at any moment, including mid-match, and change what they do:
 
 ## Deploying to Vercel (AI with a server-side key)
 
-The AI calls go through `api/claude.ts`, a Vercel serverless function, so your Anthropic key never reaches the browser.
+The AI calls go through `api/claude.ts`, a Vercel serverless function, so your OpenRouter key never reaches the browser.
 
 1. Push this repo to GitHub and import it in Vercel (framework preset: Vite; defaults are fine).
 2. Project → Settings → Environment Variables:
-   - `ANTHROPIC_API_KEY` = your key (Production + Preview)
-   - `ANTHROPIC_MODEL` = optional, defaults to `claude-sonnet-5-5`
-3. Redeploy. The ⚙ panel shows "Server-side AI is configured" and the coach/Ask Claude buttons enable.
+   - `OPENROUTER_API_KEY` = your key (Production + Preview)
+   - `OPENROUTER_MODEL` = optional OpenRouter model id, defaults to `anthropic/claude-sonnet-4.5`
+3. Redeploy. The ⚙ panel shows "Server-side AI is configured" and the coach/Ask AI buttons enable.
 
 The function only accepts two fixed modes (`feedback`, `coach`) with server-owned system prompts, caps request size and
 output tokens, and has a best-effort per-instance rate limit. It does **not** authenticate users, so anyone who finds the

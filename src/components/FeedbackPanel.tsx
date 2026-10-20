@@ -41,10 +41,10 @@ export function FeedbackPanel(props: {
       {settings && (
         <div className="settings">
           <p className="muted">{props.serverAI ? '✅ Server-side AI is configured (key stays on the server).' : 'Server-side AI not detected. For local dev only, paste a key below; it stays in this browser.'}</p>
-          <label className="field">Local-dev API key (optional)
-            <input className="text" type="password" value={props.apiKey} placeholder="sk-ant-…" onChange={(e) => props.onApiKey(e.target.value)} />
+          <label className="field">Local-dev OpenRouter key (optional)
+            <input className="text" type="password" value={props.apiKey} placeholder="sk-or-…" onChange={(e) => props.onApiKey(e.target.value)} />
           </label>
-          <label className="field">Model
+          <label className="field">Model (OpenRouter id)
             <input className="text" value={props.model} onChange={(e) => props.onModel(e.target.value)} />
           </label>
         </div>
@@ -57,8 +57,8 @@ export function FeedbackPanel(props: {
       />
       <div className="row">
         <button className="primary" onClick={() => props.onAnalyze(idea)}>Analyze</button>
-        <button onClick={() => props.onAsk(idea)} disabled={!props.aiReady || props.claudeBusy} title={props.aiReady ? 'Ask Claude for a full critique' : 'AI is not configured: set ANTHROPIC_API_KEY on Vercel, or paste a key in ⚙ for local dev'}>
-          {props.claudeBusy ? 'Asking Claude…' : '✨ Ask Claude'}
+        <button onClick={() => props.onAsk(idea)} disabled={!props.aiReady || props.claudeBusy} title={props.aiReady ? 'Ask Claude for a full critique' : 'AI is not configured: set OPENROUTER_API_KEY on Vercel, or paste a key in ⚙ for local dev'}>
+          {props.claudeBusy ? 'Asking AI…' : '✨ Ask AI'}
         </button>
       </div>
 
@@ -75,7 +75,7 @@ export function FeedbackPanel(props: {
       {props.claudeError && <p className="error">{props.claudeError}</p>}
       {props.claudeText && (
         <div className="claude">
-          <h4>✨ Claude's take</h4>
+          <h4>✨ AI's take</h4>
           <div className="claude-text">{props.claudeText}</div>
         </div>
       )}

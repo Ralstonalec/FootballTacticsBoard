@@ -13,23 +13,24 @@ let fails = 0;
 const ok = (name: string, cond: boolean, extra: unknown = '') => { if (!cond) fails++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}`, cond ? '' : JSON.stringify(extra)); };
 
 // no key
-delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
 ok('GET without key reports configured:false', JSON.stringify((await call('GET')).body) === '{"ok":true,"configured":false}');
 ok('POST without key -> 503', (await call('POST', { mode: 'coach', content: 'x' })).code === 503);
 
 // with key + stubbed upstream
-process.env.ANTHROPIC_API_KEY = 'test-key';
+process.env.OPENROUTER_API_KEY = 'test-key';
 let seen: { url?: string; init?: RequestInit } = {};
 globalThis.fetch = (async (url: string, init: RequestInit) => {
   seen = { url, init };
-  return new Response(JSON.stringify({ content: [{ type: 'text', text: '{"say":"ok","changes":[]}' }] }), { status: 200 });
+  return new Response(JSON.stringify({ choices: [{ message: { content: '{"say":"ok","changes":[]}' } }] }), { status: 200 });
 }) as typeof fetch;
 ok('GET with key reports configured:true', JSON.stringify((await call('GET')).body).includes('"configured":true'));
 const r = await call('POST', { mode: 'coach', content: 'hello' });
 ok('POST coach -> 200 with text', r.code === 200 && (r.body as { text: string }).text.includes('"say"'), r);
 const sent = JSON.parse(String(seen.init?.body));
-ok('server injects its own system prompt', typeof sent.system === 'string' && sent.system.includes('assistant manager'));
-ok('key sent upstream only', (seen.init?.headers as Record<string, string>)['x-api-key'] === 'test-key');
+ok('server injects its own system prompt', sent.messages[0].role === 'system' && sent.messages[0].content.includes('assistant manager'));
+ok('hits OpenRouter', seen.url === 'https://openrouter.ai/api/v1/chat/completions');
+ok('key sent upstream only', (seen.init?.headers as Record<string, string>).authorization === 'Bearer test-key');
 ok('rejects unknown mode', (await call('POST', { mode: 'anything', content: 'x' })).code === 400);
 ok('rejects client-supplied system prompt as mode', (await call('POST', { mode: 'system', content: 'x' })).code === 400);
 ok('rejects oversized content', (await call('POST', { mode: 'coach', content: 'a'.repeat(50000) })).code === 400);

@@ -59,7 +59,7 @@ export function App() {
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [claudeError, setClaudeError] = useState('');
   const [apiKey, setApiKey] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').key ?? ''; } catch { return ''; } });
-  const [model, setModel] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').model ?? 'claude-sonnet-5-5'; } catch { return 'claude-sonnet-5-5'; } });
+  const [model, setModel] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').model ?? 'anthropic/claude-sonnet-4.5'; } catch { return 'anthropic/claude-sonnet-4.5'; } });
   const [dynamicFindings, setDynamicFindings] = useState(0);
   const [serverAI, setServerAI] = useState(false);
   const [coachBusy, setCoachBusy] = useState(false);

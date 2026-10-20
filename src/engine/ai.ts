@@ -30,24 +30,21 @@ async function callAI(mode: AIMode, content: string, browserKey?: { apiKey: stri
     if (!res.ok) throw new Error(data.error ?? `AI request failed (${res.status})`);
     return data.text as string;
   }
-  // Local-development fallback: call Anthropic directly with a key the user pasted into the browser.
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  // Local-development fallback: call OpenRouter directly with a key the user pasted into the browser.
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': browserKey.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({ model: browserKey.model, max_tokens: mode === 'coach' ? 700 : 1200, system: SYSTEM[mode], messages: [{ role: 'user', content }] }),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${browserKey.apiKey}`, 'x-title': 'Football Tactics Board' },
+    body: JSON.stringify({
+      model: browserKey.model,
+      max_tokens: mode === 'coach' ? 700 : 1200,
+      messages: [{ role: 'system', content: SYSTEM[mode] }, { role: 'user', content }],
+    }),
   });
-  if (!res.ok) {
-    let msg = `${res.status}`;
-    try { msg += ' ' + ((await res.json()).error?.message ?? ''); } catch { /* ignore */ }
-    throw new Error(`Claude API error: ${msg}`);
-  }
-  const data = await res.json();
-  return (data.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join('\n');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`OpenRouter error: ${res.status} ${data.error?.message ?? ''}`);
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('The model returned an empty reply.');
+  return text as string;
 }
 
 function compact(team: Team, match: Match | null, teamIdx: 0 | 1) {

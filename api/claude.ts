@@ -1,9 +1,9 @@
 import { SYSTEM, type AIMode } from './_prompts';
 
 // Vercel serverless function. The API key never reaches the browser.
-//   ANTHROPIC_API_KEY  (required)
-//   ANTHROPIC_MODEL    (optional, default below)
-const DEFAULT_MODEL = 'claude-sonnet-5-5';
+//   OPENROUTER_API_KEY  (required)
+//   OPENROUTER_MODEL    (optional, any OpenRouter model id; default below)
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.5';
 const MAX_CONTENT = 40_000;
 const MAX_TOKENS: Record<AIMode, number> = { feedback: 1200, coach: 700 };
 
@@ -22,7 +22,7 @@ interface Req { method?: string; body?: unknown; headers: Record<string, string 
 interface Res { status(c: number): Res; json(b: unknown): void }
 
 export default async function handler(req: Req, res: Res): Promise<void> {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY;
   if (req.method === 'GET') {
     res.status(200).json({ ok: true, configured: Boolean(key) });
     return;
@@ -32,7 +32,7 @@ export default async function handler(req: Req, res: Res): Promise<void> {
     return;
   }
   if (!key) {
-    res.status(503).json({ error: 'ANTHROPIC_API_KEY is not set on the server.' });
+    res.status(503).json({ error: 'OPENROUTER_API_KEY is not set on the server.' });
     return;
   }
   const fwd = req.headers['x-forwarded-for'];
@@ -51,22 +51,28 @@ export default async function handler(req: Req, res: Res): Promise<void> {
   }
 
   try {
-    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, 'x-title': 'Football Tactics Board' },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
+        model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
         max_tokens: MAX_TOKENS[mode],
-        system: SYSTEM[mode],
-        messages: [{ role: 'user', content }],
+        messages: [
+          { role: 'system', content: SYSTEM[mode] },
+          { role: 'user', content },
+        ],
       }),
     });
-    const data = (await upstream.json()) as { content?: { type: string; text?: string }[]; error?: { message?: string } };
+    const data = (await upstream.json()) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
     if (!upstream.ok) {
       res.status(502).json({ error: data.error?.message ?? `Upstream error ${upstream.status}` });
       return;
     }
-    const text = (data.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
+    const text = data.choices?.[0]?.message?.content ?? '';
+    if (!text) {
+      res.status(502).json({ error: 'The model returned an empty reply.' });
+      return;
+    }
     res.status(200).json({ text });
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : 'Upstream request failed' });
