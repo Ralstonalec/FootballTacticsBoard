@@ -36,7 +36,7 @@ async function callAI(mode: AIMode, content: string, browserKey?: { apiKey: stri
     headers: { 'content-type': 'application/json', authorization: `Bearer ${browserKey.apiKey}`, 'x-title': 'Football Tactics Board' },
     body: JSON.stringify({
       model: browserKey.model,
-      max_tokens: mode === 'coach' ? 700 : 1200,
+      max_tokens: mode === 'coach' ? 700 : mode === 'feedback' ? 1200 : 900,
       messages: [{ role: 'system', content: SYSTEM[mode] }, { role: 'user', content }],
     }),
   });
@@ -160,4 +160,46 @@ export async function askCoach(opts: {
   const content = `Coach's instruction: ${opts.command}${opts.selectedNumber ? `\n(The coach currently has player #${opts.selectedNumber} selected.)` : ''}\n\nMy team:\n${JSON.stringify(compact(opts.team, opts.match, opts.side))}\n\nOpponent:\n${JSON.stringify(compact(opts.opp, opts.match, (1 - opts.side) as 0 | 1))}${liveSummary(opts.match, opts.side)}`;
   const text = await callAI('coach', content, opts.browserKey);
   return parseCoachReply(text, opts.team, opts.opp);
+}
+
+// ------------------------------------------------------------ shape lab
+export interface ScenarioStep { x: number; y: number; poss: 0 | 1; seconds: number; caption: string }
+export interface Scenario { title: string; steps: ScenarioStep[] }
+
+export function parseScenario(text: string): Scenario {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('The AI did not return a ball sequence.');
+  let raw: { title?: unknown; steps?: unknown };
+  try { raw = JSON.parse(text.slice(start, end + 1)); } catch { throw new Error('The AI returned a malformed ball sequence.'); }
+  const steps: ScenarioStep[] = [];
+  for (const s of (Array.isArray(raw.steps) ? raw.steps : []).slice(0, 14)) {
+    const x = Number(s?.x), y = Number(s?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const secs = Number(s.seconds);
+    steps.push({
+      x: Math.max(0, Math.min(105, x)),
+      y: Math.max(0, Math.min(68, y)),
+      poss: s.poss === 'away' ? 1 : 0,
+      seconds: Number.isFinite(secs) ? Math.max(0, Math.min(8, secs)) : 2,
+      caption: typeof s.caption === 'string' ? s.caption.slice(0, 120) : '',
+    });
+  }
+  if (steps.length < 2) throw new Error('The AI sequence was too short to animate.');
+  steps[0].seconds = 0;
+  return { title: typeof raw.title === 'string' ? raw.title.slice(0, 80) : 'AI sequence', steps };
+}
+
+const brief = (t: Team) => ({ name: t.name, shape: t.players.map((p) => p.role).join(' '), tactics: t.tactics });
+
+export async function askScenario(opts: { prompt: string; home: Team; away: Team; browserKey?: { apiKey: string; model: string } }): Promise<Scenario> {
+  const content = `Coach's request: ${opts.prompt}\n\nHome: ${JSON.stringify(brief(opts.home))}\nAway: ${JSON.stringify(brief(opts.away))}`;
+  return parseScenario(await callAI('scenario', content, opts.browserKey));
+}
+
+export interface ShapeSnapshot { caption: string; ball: [number, number]; possession: 'home' | 'away'; home: unknown; away: unknown }
+
+export async function askExplain(opts: { title: string; snapshots: ShapeSnapshot[]; browserKey?: { apiKey: string; model: string } }): Promise<string> {
+  const content = `Sequence: ${opts.title}\n\n${JSON.stringify(opts.snapshots)}`;
+  return callAI('explain', content, opts.browserKey);
 }

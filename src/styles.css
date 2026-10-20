@@ -72,3 +72,6 @@ ul.coach-log li.coach { background: var(--panel2); border-radius: 8px; padding: 
 ul.coach-log li.you { color: var(--muted); }
 ul.coach-log .change { color: #86efac; margin-left: 6px; }
 ul.events li.coach { color: #86efac; }
+.lab-caption { background: var(--panel2); border-radius: 8px; padding: 6px 10px; margin: 6px 0; font-size: 12.5px; }
+.lab-caption div { color: #fde68a; margin-top: 2px; }
+.intent { background: var(--panel2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }

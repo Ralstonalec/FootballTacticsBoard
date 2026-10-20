@@ -31,6 +31,7 @@ export interface SimPlayer {
   stamina: number;
   decideT: number;
   rank: number; // distance rank to ball within own team (outfield)
+  intent: string; // what the player is currently trying to do (for the shape diagram)
 }
 
 interface Flight {
@@ -118,7 +119,7 @@ export class Match {
       for (const spec of team.players) {
         const p: SimPlayer = {
           spec, team: ti as TeamIdx, x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0,
-          sprint: false, stamina: 1, decideT: 0.5, rank: 0,
+          sprint: false, stamina: 1, decideT: 0.5, rank: 0, intent: 'Holding shape',
         };
         this.players.push(p);
         this.byTeam[ti].push(p);
@@ -186,8 +187,55 @@ export class Match {
   }
 
   // ------------------------------------------------------------------- step
+  // ---------------------------------------------------------- shape-lab mode
+  /** In scripted mode the ball is placed by the caller; players react using the same off-ball logic as a real match. */
+  scripted = false;
+  private scriptPoss: TeamIdx = 0;
+
+  scriptBall(x: number, y: number, poss: TeamIdx): void {
+    this.scripted = true;
+    this.ball.x = clamp(x, 0, PW);
+    this.ball.y = clamp(y, 0, PH);
+    this.scriptPoss = poss;
+  }
+
+  /** Place everyone at their formation spots (as at kick-off, but without the ball logic). */
+  resetShape(): void {
+    this.kickoff(0);
+    this.ball.owner = null;
+  }
+
+  private stepScripted(dt: number): void {
+    this.t += dt;
+    const ball = this.ball;
+    const poss = this.scriptPoss;
+    ball.flight = null;
+    ball.lastTeam = poss;
+    this.computeOffsideLimits();
+    this.rankPlayers();
+    // the nearest player of the possessing team (with a little stickiness) is on the ball
+    let carrier = ball.owner && ball.owner.team === poss ? ball.owner : null;
+    let cd = carrier ? dist(carrier.x, carrier.y, ball.x, ball.y) : 1e9;
+    for (const q of this.byTeam[poss]) {
+      const d = dist(q.x, q.y, ball.x, ball.y);
+      if (d + 3 < cd) { carrier = q; cd = d; }
+    }
+    ball.owner = carrier;
+    for (const p of this.players) {
+      if (p === carrier) {
+        p.tx = ball.x; p.ty = ball.y; p.sprint = true; p.intent = 'On the ball';
+      } else this.setTarget(p, poss);
+    }
+    for (const p of this.players) this.move(p, dt);
+    this.separate();
+  }
+
   step(dt: number): void {
     if (this.finished) return;
+    if (this.scripted) {
+      this.stepScripted(dt);
+      return;
+    }
     this.t += dt;
     if (this.t >= MATCH_SECONDS) {
       this.finished = true;
@@ -258,8 +306,10 @@ export class Match {
     const ball = this.ball;
     const inPoss = possTeam === p.team;
     p.sprint = false;
+    p.intent = inPoss ? 'Supporting the ball' : 'Holding shape';
 
     if (spec.role === 'GK') {
+      p.intent = 'Keeper positioning';
       this.goalkeeperTarget(p);
       return;
     }
@@ -268,17 +318,17 @@ export class Match {
     const f = ball.flight;
     if (f && f.kind === 'pass') {
       if (f.receiver === p) {
-        p.tx = f.tx; p.ty = f.ty; p.sprint = true;
+        p.tx = f.tx; p.ty = f.ty; p.sprint = true; p.intent = 'Receiving the pass';
         return;
       }
       if (this.landingDefender === p) {
-        p.tx = f.tx; p.ty = f.ty; p.sprint = true;
+        p.tx = f.tx; p.ty = f.ty; p.sprint = true; p.intent = 'Trying to intercept';
         return;
       }
     }
     // Loose ball: nearest two from each team chase
     if (!ball.owner && !f && p.rank < 2) {
-      p.tx = ball.x; p.ty = ball.y; p.sprint = true;
+      p.tx = ball.x; p.ty = ball.y; p.sprint = true; p.intent = 'Chasing the loose ball';
       return;
     }
 
@@ -305,6 +355,7 @@ export class Match {
       if (w > 0) {
         const goalX = p.team === 0 ? PW : 0;
         wx = lerp(wx, goalX - dir * 11, w);
+        if (w > 0.25) p.intent = 'Arriving in the box';
         // far-side runners attack the back post, near-side stay wide to supply
         if (Math.abs(wy - ball.y) > 18) wy = lerp(wy, PH / 2 + (wy - PH / 2) * 0.3, w);
       }
@@ -317,6 +368,12 @@ export class Match {
       const w = inst.roam * 0.45;
       wx += (sx - wx) * w;
       wy += (sy - wy) * w;
+      if (p.intent === 'Supporting the ball') {
+        if ((spec.role === 'FB' || spec.role === 'WB') && inst.runs > 0.55) p.intent = 'Overlapping / pushing on';
+        else if (inst.runs >= 0.7) p.intent = 'Making a forward run';
+        else if (inst.roam > 0.6) p.intent = 'Finding space';
+        else if (inst.runs < 0.25) p.intent = 'Staying back as cover';
+      }
     } else {
       const w = inst.roam * 0.25;
       wx += (ball.x - dir * 3 - wx) * w;
@@ -334,18 +391,22 @@ export class Match {
         wy = ball.y;
         p.sprint = true;
         pressing = true;
+        p.intent = 'Pressing the ball';
       } else if (!inst.mark && p.rank >= this.pressSlots[p.team] && p.rank < this.pressSlots[p.team] + 2 && f0 < 0.6) {
         // cover: drop goal-side of the ball to deny the lane to goal
         const ownGx = p.team === 0 ? 0 : PW;
         const k = 0.16 + 0.1 * (p.rank - this.pressSlots[p.team]);
         wx = lerp(wx, ball.x + (ownGx - ball.x) * k, 0.7);
         wy = lerp(wy, ball.y + (PH / 2 - ball.y) * k, 0.7);
+        p.intent = 'Covering the press';
       } else if (inst.mark) {
         const opp = this.findPlayer(inst.mark);
         if (opp && opp.team !== p.team) {
           wx = opp.x - dir * 1.5;
           wy = opp.y;
           p.sprint = dist(p.x, p.y, opp.x, opp.y) < 22;
+          const oi = this.teams[opp.team].players.indexOf(opp.spec);
+          p.intent = `Man-marking #${oi + 1}`;
         }
       } else {
         // zonal marking: pick up the nearest attacker in my zone and stay goal-side
@@ -361,6 +422,7 @@ export class Match {
           wx = lerp(wx, nearest.x - dir * 2, w);
           wy = lerp(wy, nearest.y, w);
           p.sprint = nd < 8;
+          if (w > 0.25) p.intent = 'Picking up an attacker';
         }
       }
     } else if (!ball.owner || ball.owner !== p) {
@@ -373,7 +435,9 @@ export class Match {
     if (!inPoss && !pressing) {
       // recover: stay within a block of the ball instead of waiting up the pitch
       const lead = 14 + 26 * tac.lineHeight;
-      wx = dir > 0 ? Math.min(wx, ball.x + lead) : Math.max(wx, ball.x - lead);
+      const capped = dir > 0 ? Math.min(wx, ball.x + lead) : Math.max(wx, ball.x - lead);
+      if (Math.abs(capped - wx) > 1) p.intent = 'Recovering shape';
+      wx = capped;
     }
     if (!inPoss && p.rank >= this.pressSlots[p.team]) {
       // protect the box: when the ball is in my defensive third, collapse toward the goal-ball line
@@ -382,6 +446,7 @@ export class Match {
         const ownGx = p.team === 0 ? 0 : PW;
         wx = lerp(wx, ownGx + (ball.x - ownGx) * 0.55, 0.45 * danger);
         wy = lerp(wy, PH / 2 + (ball.y - PH / 2) * 0.5, 0.45 * danger);
+        if (danger > 0.3) p.intent = 'Protecting the box';
       }
     }
     p.tx = clamp(wx, 0.5, PW - 0.5);
@@ -412,6 +477,7 @@ export class Match {
   private carryTarget(p: SimPlayer, dt: number): void {
     p.decideT -= dt;
     p.sprint = true;
+    p.intent = 'On the ball';
     if (p.spec.role === 'GK') {
       p.tx = p.x; p.ty = p.y;
     }

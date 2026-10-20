@@ -31,6 +31,18 @@ npm run simtest -- 30 4-3-3 4-4-2 42   # headless calibration: matches, home for
   - *Ask AI* – with an OpenRouter key (server-side on Vercel, or ⚙ for local dev) the model critiques free-form
     ideas using your exact setup and the latest simulation results.
 
+## Shape Lab (animated formation diagram)
+
+Top bar → **🎞 Shape Lab**. Both teams' formations react to the ball using the same decision logic as the match simulator:
+
+- **Move the ball yourself**: click or drag on the pitch and watch both blocks shift, compress, press and recover.
+- **Playbooks**: build-up and switch, lose it and counter, opponent builds against your press, long ball, wing overload.
+- **AI writes the sequence**: describe what to test ("away win it in midfield and break down our right") and the AI
+  choreographs the ball movement; **Explain what happened** has the AI narrate how the shape responded.
+- **Diagram**: lines through each rank, a hull around each block, ball trail, and a live *decision label* per player
+  (Pressing the ball, Covering the press, Man-marking #9, Protecting the box, Recovering shape, Overlapping…).
+  Live metrics give block depth/width, gaps between lines and back-line height. Coach instructions still apply instantly.
+
 ## Live coaching
 
 Select any player at any moment, including mid-match, and change what they do:

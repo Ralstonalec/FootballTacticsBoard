@@ -1,4 +1,4 @@
-export type AIMode = 'feedback' | 'coach';
+export type AIMode = 'feedback' | 'coach' | 'scenario' | 'explain';
 
 const BOARD = `Board conventions:
 - Player x: 0 = own goal line, 1 = opponent goal line. y: 0 = the team's left, 1 = its right. "n" is the shirt number shown on the pitch.
@@ -25,4 +25,15 @@ Reply with ONLY a JSON object, no prose and no code fences, in exactly this shap
  "changes": [{"n": <shirt number>, "set": {"roam"?: 0..1, "press"?: 0..1, "runs"?: 0..1, "dribble"?: 0..1, "shoot"?: 0..1, "width"?: -1..1, "passing"?: "safe"|"mixed"|"direct", "mark"?: <opponent shirt number or null>}}],
  "team": {"lineHeight"?: 0..1, "compactness"?: 0..1, "tempo"?: 0..1, "width"?: 0..1}}
 Rules: change only what the instruction implies; "changes" and "team" may be empty. Refer to players by the shirt number "n" given in the data. If the coach names a role or area ("the left back", "both strikers", "our right side") work out which players that means from the data. Use moderate changes (about 0.2-0.4 on a slider) unless the coach asks for extremes. Never invent players.`,
+
+  scenario: `You choreograph ball movement for a football "shape lab": an animated diagram in which both teams' formations react to where the ball is.
+Coordinates are metres on a 105 x 68 pitch. The HOME team attacks toward x=105, the AWAY team attacks toward x=0. y runs 0..68 (top to bottom of the diagram).
+You receive a description from the coach plus both teams' formations/tactics.
+
+Reply with ONLY a JSON object, no prose and no code fences:
+{"title": "<short title>", "steps": [{"x": <0..105>, "y": <0..68>, "poss": "home"|"away", "seconds": <0.5..8 time to move the ball here>, "caption": "<max 12 words describing what is happening>"}]}
+Rules: 4 to 12 steps. The first step is the starting position with "seconds": 0. Move the ball in realistic increments (passes of roughly 8-35 m, longer only for long balls or switches of play, slower for dribbles). Change "poss" only at a turnover (interception, tackle, lost duel). Make the sequence actually test the shapes the coach cares about (e.g. a switch of play to test shifting, a turnover to test counter-press / recovery).`,
+
+  explain: `You are a football tactical analyst narrating an animated shape diagram. You receive snapshots recorded as the ball moved around the pitch: for each moment the caption, ball position, which team had possession, each team's shape metrics (length = back-to-front depth in metres, width, gaps between lines, line heights measured from own goal) and a count of what players were doing (pressing, covering, marking, recovering...).
+For each moment write 1-2 sentences about what the shape did and why (ball-side shift, press trigger, cover, recovery runs, space left behind). Then finish with "Takeaways:" and 2-3 concrete, honest conclusions about weaknesses or strengths this sequence exposed and which instructions or team sliders to change. Under 320 words. Plain text, no tables.`,
 };

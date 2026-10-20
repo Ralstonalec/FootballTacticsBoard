@@ -3,6 +3,7 @@ import type { Team } from '../engine/types';
 import type { Match } from '../engine/sim';
 import { GX, GY } from '../engine/sim';
 import { PH, PW, fromWorld, toWorld } from '../engine/geometry';
+import { convexHull, lineClusters } from '../engine/shape';
 
 export type HeatMode = 'off' | 'home' | 'away';
 
@@ -21,6 +22,12 @@ export interface PitchProps {
   onSelect: (id: string | null) => void;
   onMove: (team: 0 | 1, id: string, nx: number, ny: number) => void;
   onAdd: (nx: number, ny: number) => void;
+  // shape lab
+  labMode?: boolean;
+  shape?: boolean;
+  labels?: 'off' | 'selected' | 'all';
+  trail?: [number, number][];
+  onBallSet?: (x: number, y: number) => void;
 }
 
 const MARGIN = 18;
@@ -32,6 +39,7 @@ export function Pitch(props: PitchProps) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const drag = useRef<{ id: string; team: 0 | 1 } | null>(null);
+  const ballDrag = useRef(false);
   const size = useRef({ w: 800, h: 520, dpr: 1 });
 
   useEffect(() => {
@@ -94,6 +102,10 @@ export function Pitch(props: PitchProps) {
         drag.current = h;
         canvas.current!.setPointerCapture(e.pointerId);
       }
+    } else if (p.labMode && p.onBallSet) {
+      ballDrag.current = true;
+      canvas.current!.setPointerCapture(e.pointerId);
+      p.onBallSet(Math.min(PW, Math.max(0, wx)), Math.min(PH, Math.max(0, wy)));
     } else if (p.addMode && !p.locked) {
       const [nx, ny] = fromWorld(p.editing, wx, wy);
       if (nx >= 0 && nx <= 1 && ny >= 0 && ny <= 1) p.onAdd(nx, ny);
@@ -101,6 +113,11 @@ export function Pitch(props: PitchProps) {
   };
 
   const onMove = (e: React.PointerEvent) => {
+    if (ballDrag.current) {
+      const { wx, wy } = toNorm(e);
+      propsRef.current.onBallSet?.(Math.min(PW, Math.max(0, wx)), Math.min(PH, Math.max(0, wy)));
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const p = propsRef.current;
@@ -119,9 +136,9 @@ export function Pitch(props: PitchProps) {
         ref={canvas}
         onPointerDown={onDown}
         onPointerMove={onMove}
-        onPointerUp={() => (drag.current = null)}
-        onPointerCancel={() => (drag.current = null)}
-        style={{ touchAction: 'none', cursor: props.addMode ? 'copy' : 'default' }}
+        onPointerUp={() => { drag.current = null; ballDrag.current = false; }}
+        onPointerCancel={() => { drag.current = null; ballDrag.current = false; }}
+        style={{ touchAction: 'none', cursor: props.addMode ? 'copy' : props.labMode ? 'crosshair' : 'default' }}
       />
     </div>
   );
@@ -228,6 +245,42 @@ function draw(c: HTMLCanvasElement, p: PitchProps, size: { w: number; h: number;
     }
   }
 
+  // shape diagram: lines between players of the same line, team hull, ball trail
+  if (m && p.shape) {
+    for (const ti of [0, 1] as const) {
+      const outfield = m.byTeam[ti].filter((q) => q.spec.role !== 'GK');
+      if (outfield.length >= 3) {
+        const hull = convexHull(outfield.map((q) => [q.x, q.y] as [number, number]));
+        ctx.beginPath();
+        hull.forEach(([hx, hy], i) => (i ? ctx.lineTo(X(hx), Y(hy)) : ctx.moveTo(X(hx), Y(hy))));
+        ctx.closePath();
+        ctx.fillStyle = ti === 0 ? 'rgba(59,130,246,0.14)' : 'rgba(239,68,68,0.14)';
+        ctx.fill();
+        ctx.strokeStyle = ti === 0 ? 'rgba(147,197,253,0.7)' : 'rgba(252,165,165,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.strokeStyle = ti === 0 ? 'rgba(191,219,254,0.95)' : 'rgba(254,202,202,0.95)';
+      ctx.lineWidth = 2.5;
+      for (const line of lineClusters(m, ti as 0 | 1)) {
+        if (line.length < 2) continue;
+        const sorted = [...line].sort((a, b) => a.y - b.y);
+        ctx.beginPath();
+        sorted.forEach((q, i) => (i ? ctx.lineTo(X(q.x), Y(q.y)) : ctx.moveTo(X(q.x), Y(q.y))));
+        ctx.stroke();
+      }
+    }
+  }
+  if (m && p.trail && p.trail.length > 1) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    p.trail.forEach(([tx, ty], i) => (i ? ctx.lineTo(X(tx), Y(ty)) : ctx.moveTo(X(tx), Y(ty))));
+    ctx.stroke();
+  }
+
   // players
   for (const ti of [0, 1] as const) {
     teams[ti].players.forEach((pl, idx) => {
@@ -259,6 +312,29 @@ function draw(c: HTMLCanvasElement, p: PitchProps, size: { w: number; h: number;
       ctx.fillText(pl.role, X(x), Y(y) + r + 8);
       ctx.globalAlpha = 1;
     });
+  }
+
+  // intent labels (what each player is currently doing)
+  if (m && p.labels && p.labels !== 'off') {
+    for (const ti of [0, 1] as const) {
+      teams[ti].players.forEach((pl, idx) => {
+        const sp = m.findPlayer(pl.id);
+        if (!sp) return;
+        if (p.labels === 'selected' && pl.id !== sel) return;
+        const text = sp.intent;
+        ctx.font = `${Math.max(9, Math.round(r * 0.72))}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(text).width + 8;
+        const lx = X(sp.x);
+        const ly = Y(sp.y) - r - 11;
+        ctx.fillStyle = 'rgba(15,23,42,0.82)';
+        ctx.fillRect(lx - tw / 2, ly - 8, tw, 16);
+        ctx.fillStyle = ti === 0 ? '#bfdbfe' : '#fecaca';
+        ctx.fillText(text, lx, ly + 0.5);
+        void idx;
+      });
+    }
   }
 
   // ball

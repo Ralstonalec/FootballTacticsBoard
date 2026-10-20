@@ -11,7 +11,10 @@ import { toWorld } from './engine/geometry';
 import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
-import { askCoach, askFeedback, probeServer } from './engine/ai';
+import { askCoach, askExplain, askFeedback, askScenario, probeServer, Scenario, ShapeSnapshot } from './engine/ai';
+import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
+import { PLAYBOOKS } from './engine/playbooks';
+import { snapshotTeam } from './engine/shape';
 import { CoachPanel, CoachLogEntry } from './components/CoachPanel';
 
 const STATE_KEY = 'ftb.board.v1';
@@ -65,6 +68,19 @@ export function App() {
   const [coachBusy, setCoachBusy] = useState(false);
   const [coachLog, setCoachLog] = useState<CoachLogEntry[]>([]);
   useEffect(() => { void probeServer().then(setServerAI); }, []);
+
+  // shape lab
+  const [lab, setLab] = useState(false);
+  const [labUI, setLabUI] = useState<LabUI>({
+    playing: false, speed: 1, poss: 0, title: '', step: 0, steps: 0, caption: '', shape: true, labels: 'selected',
+    explaining: false, generating: false, explanation: '', error: '', snapshots: 0,
+  });
+  const labRef = useRef({
+    scenario: null as Scenario | null, step: 0, t: 0, hold: 0, phase: 'idle' as 'idle' | 'move' | 'hold',
+    bx: 52.5, by: 34, fx: 52.5, fy: 34, tx: 52.5, ty: 34, poss: 0 as 0 | 1, playing: false, speed: 1,
+    trail: [] as [number, number][], snaps: [] as ShapeSnapshot[],
+  });
+  const patchLab = (p: Partial<LabUI>) => setLabUI((u) => ({ ...u, ...p }));
   const aiReady = serverAI || apiKey.trim().length > 0;
   const browserKey = serverAI || !apiKey.trim() ? undefined : { apiKey: apiKey.trim(), model };
 
@@ -161,6 +177,118 @@ export function App() {
       setCoachBusy(false);
     }
   };
+
+  // ---- shape lab
+  const startLab = () => {
+    const m = new Match(structuredClone(home), structuredClone(away), 1, 0.1);
+    m.resetShape();
+    m.scriptBall(52.5, 34, 0);
+    matchRef.current = m;
+    Object.assign(labRef.current, { scenario: null, step: 0, phase: 'idle', playing: false, bx: 52.5, by: 34, tx: 52.5, ty: 34, trail: [], snaps: [], poss: 0 });
+    setLabUI((u) => ({ ...u, playing: false, steps: 0, step: 0, caption: '', title: '', poss: 0, explanation: '', error: '', snapshots: 0 }));
+    setLab(true);
+    setHeat('off');
+    setTick((t) => t + 1);
+  };
+  const exitLab = () => {
+    matchRef.current = null;
+    labRef.current.playing = false;
+    setLab(false);
+    setTick((t) => t + 1);
+  };
+  const beginStep = (i: number) => {
+    const L = labRef.current;
+    const st = L.scenario!.steps[i];
+    L.step = i; L.t = 0; L.phase = 'move';
+    L.fx = L.bx; L.fy = L.by; L.tx = st.x; L.ty = st.y; L.poss = st.poss;
+    patchLab({ step: i, caption: st.caption, poss: st.poss });
+  };
+  const loadScenario = (sc: Scenario, autoplay = true) => {
+    const L = labRef.current;
+    const m = matchRef.current;
+    if (!m) return;
+    L.scenario = sc; L.snaps = []; L.trail = [];
+    L.bx = L.fx = sc.steps[0].x; L.by = L.fy = sc.steps[0].y;
+    m.resetShape();
+    L.playing = autoplay; L.speed = labUI.speed;
+    patchLab({ title: sc.title, steps: sc.steps.length, playing: autoplay, explanation: '', error: '', snapshots: 0 });
+    beginStep(0);
+  };
+  const generateScenario = async (prompt: string) => {
+    patchLab({ generating: true, error: '' });
+    try {
+      loadScenario(await askScenario({ prompt, home, away, browserKey }));
+    } catch (e) {
+      patchLab({ error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      patchLab({ generating: false });
+    }
+  };
+  const explainScenario = async () => {
+    patchLab({ explaining: true, error: '' });
+    try {
+      patchLab({ explanation: await askExplain({ title: labRef.current.scenario?.title ?? 'sequence', snapshots: labRef.current.snaps, browserKey }) });
+    } catch (e) {
+      patchLab({ error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      patchLab({ explaining: false });
+    }
+  };
+
+  // shape lab driver: glides the ball and advances the playbook
+  useEffect(() => {
+    if (!lab) return;
+    let raf = 0;
+    let last = performance.now();
+    let acc = 0;
+    let lastUi = 0;
+    const loop = (now: number) => {
+      const m = matchRef.current;
+      if (!m) return;
+      const L = labRef.current;
+      const dtReal = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const dtSim = dtReal * L.speed;
+      const sc = L.scenario;
+      if (L.playing && sc) {
+        const st = sc.steps[L.step];
+        if (L.phase === 'move') {
+          L.t += dtSim;
+          const u = st.seconds <= 0 ? 1 : Math.min(1, L.t / st.seconds);
+          const e = u * u * (3 - 2 * u);
+          L.bx = L.fx + (L.tx - L.fx) * e;
+          L.by = L.fy + (L.ty - L.fy) * e;
+          if (u >= 1) { L.phase = 'hold'; L.hold = 0; }
+        } else if (L.phase === 'hold') {
+          L.hold += dtSim;
+          if (L.hold >= 2) {
+            L.snaps.push({
+              caption: st.caption, ball: [Math.round(L.bx), Math.round(L.by)], possession: L.poss === 0 ? 'home' : 'away',
+              home: snapshotTeam(m, 0), away: snapshotTeam(m, 1),
+            });
+            patchLab({ snapshots: L.snaps.length });
+            if (L.step + 1 < sc.steps.length) beginStep(L.step + 1);
+            else { L.playing = false; L.phase = 'idle'; patchLab({ playing: false }); }
+          }
+        }
+      } else {
+        // free mode: ball glides toward where you last clicked
+        const dx = L.tx - L.bx, dy = L.ty - L.by, d = Math.hypot(dx, dy);
+        const stepLen = Math.min(d, 24 * dtReal);
+        if (d > 0.01) { L.bx += (dx / d) * stepLen; L.by += (dy / d) * stepLen; }
+      }
+      m.scriptBall(L.bx, L.by, L.poss);
+      acc += dtSim;
+      let guard = 0;
+      while (acc >= 0.1 && guard++ < 80) { m.step(0.1); acc -= 0.1; }
+      const tr = L.trail;
+      if (!tr.length || Math.hypot(tr[tr.length - 1][0] - L.bx, tr[tr.length - 1][1] - L.by) > 1.2) { tr.push([L.bx, L.by]); if (tr.length > 70) tr.shift(); }
+      if (now - lastUi > 100) { lastUi = now; setTick((t) => t + 1); }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [lab]);
 
   // ---- simulation control
   const startMatch = () => {
@@ -281,6 +409,9 @@ export function App() {
           <button className={editing === 1 ? 'on away' : 'away'} onClick={() => { setEditing(1); setSelectedId(null); }}>Edit Away</button>
         </div>
         <div className="tools">
+          <button className={lab ? 'on' : ''} onClick={lab ? exitLab : startLab} disabled={locked && !lab} title="Animated diagram of how both formations move with the ball">
+            {lab ? '✕ Exit Shape Lab' : '🎞 Shape Lab'}
+          </button>
           <select value={addRole} onChange={(e) => setAddRole(e.target.value as Role)} disabled={locked} title="Role of the next player you add">
             {(['GK', 'CB', 'FB', 'WB', 'DM', 'CM', 'AM', 'W', 'ST'] as Role[]).map((r) => <option key={r}>{r}</option>)}
           </select>
@@ -337,6 +468,15 @@ export function App() {
             onSelect={(id) => { setSelectedId(id); setHighlight([]); }}
             onMove={(t, id, nx, ny) => patchPlayer(t, id, (p) => ({ ...p, x: nx, y: ny }))}
             onAdd={(nx, ny) => { addPlayer(nx, ny); setAddMode(false); }}
+            labMode={lab}
+            shape={lab && labUI.shape}
+            labels={lab ? labUI.labels : 'off'}
+            trail={lab ? labRef.current.trail : undefined}
+            onBallSet={(x, y) => {
+              const L = labRef.current;
+              L.playing = false; L.phase = 'idle'; L.tx = x; L.ty = y;
+              patchLab({ playing: false });
+            }}
           />
           <p className="hint">
             Home 🔵 attacks right, Away 🔴 attacks left. Drag the {editing === 0 ? 'blue' : 'red'} players to build any formation; click anyone to edit their instructions.
@@ -345,6 +485,35 @@ export function App() {
         </section>
 
         <aside className="col">
+          {lab && matchRef.current ? (
+            <ShapeLabPanel
+              match={matchRef.current}
+              tick={tick}
+              ui={labUI}
+              aiReady={aiReady}
+              selected={(() => {
+                const sp = selectedId ? matchRef.current.findPlayer(selectedId) : null;
+                const f = find(selectedId);
+                return sp && f ? { label: `#${f.index + 1} ${f.player.role} (${f.team === 0 ? 'home' : 'away'})`, intent: sp.intent } : null;
+              })()}
+              onPlaybook={(i) => loadScenario(PLAYBOOKS[i])}
+              onPlay={() => {
+                const L = labRef.current;
+                if (!L.scenario) return;
+                if (L.phase === 'idle') beginStep(L.step >= L.scenario.steps.length - 1 ? 0 : L.step);
+                L.playing = !L.playing;
+                patchLab({ playing: L.playing });
+              }}
+              onRestart={() => { const L = labRef.current; if (L.scenario) { loadScenario(L.scenario); } }}
+              onSpeed={(v) => { labRef.current.speed = v; patchLab({ speed: v }); }}
+              onPoss={(p) => { labRef.current.poss = p; patchLab({ poss: p }); }}
+              onShape={(v) => patchLab({ shape: v })}
+              onLabels={(v) => patchLab({ labels: v })}
+              onGenerate={generateScenario}
+              onExplain={explainScenario}
+              onExit={exitLab}
+            />
+          ) : (
           <SimPanel
             match={matchRef.current}
             tick={tick}
@@ -364,6 +533,7 @@ export function App() {
             onBatch={runBatchNow}
             onFinish={finishMatch}
           />
+          )}
           <CoachPanel
             aiReady={aiReady}
             busy={coachBusy}

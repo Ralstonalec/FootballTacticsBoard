@@ -1,5 +1,5 @@
 import handler from '../api/claude';
-import { parseCoachReply } from '../src/engine/ai';
+import { parseCoachReply, parseScenario } from '../src/engine/ai';
 import { buildTeam } from '../src/engine/formations';
 
 type R = { code: number; body: unknown };
@@ -48,5 +48,11 @@ ok('parse: marking maps to opponent id', parsed.changes[0].patch.mark === opp.pl
 ok('parse: unknown keys/players dropped', !('hax' in parsed.changes[0].patch) && !('evil' in parsed.team) && parsed.team.lineHeight === 0.8);
 let threw = false; try { parseCoachReply('no json here', me, opp); } catch { threw = true; }
 ok('parse: non-JSON throws friendly error', threw);
+ok('POST scenario mode accepted', (await call('POST', { mode: 'scenario', content: 'x' }, '7.7.7.7')).code === 200);
+ok('POST explain mode accepted', (await call('POST', { mode: 'explain', content: 'x' }, '7.7.7.7')).code === 200);
+const sc = parseScenario('{"title":"T","steps":[{"x":-5,"y":99,"poss":"away","seconds":99,"caption":"a"},{"x":50,"y":30,"poss":"home","seconds":2,"caption":"b"},{"x":"bad","y":1}]}');
+ok('scenario: clamped to pitch/time, bad steps dropped', sc.steps.length === 2 && sc.steps[0].x === 0 && sc.steps[0].y === 68 && sc.steps[0].seconds === 0 && sc.steps[0].poss === 1, sc);
+let t2 = false; try { parseScenario('{"steps":[{"x":1,"y":1}]}'); } catch { t2 = true; }
+ok('scenario: too-short sequence rejected', t2);
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

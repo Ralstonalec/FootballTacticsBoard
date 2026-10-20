@@ -5,7 +5,7 @@ import { SYSTEM, type AIMode } from './_prompts';
 //   OPENROUTER_MODEL    (optional, any OpenRouter model id; default below)
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.5';
 const MAX_CONTENT = 40_000;
-const MAX_TOKENS: Record<AIMode, number> = { feedback: 1200, coach: 700 };
+const MAX_TOKENS: Record<AIMode, number> = { feedback: 1200, coach: 700, scenario: 900, explain: 900 };
 
 // Best-effort per-instance rate limit (serverless instances do not share memory;
 // use Vercel Firewall / Upstash for a hard limit).
