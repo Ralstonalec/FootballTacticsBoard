@@ -184,3 +184,9 @@ details.dev summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 details.fine { border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px 10px; margin: 10px 0; background: var(--panel); }
 details.fine summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; padding: 4px 0; }
 .card textarea { width: 100%; }
+
+textarea.brief { min-height: 112px; font-size: 13.5px; line-height: 1.5; }
+.row.subtle > .fit { flex: 0 0 auto; color: var(--muted); }
+.understood .summary { color: var(--text); font-weight: 600; margin: 2px 0 4px; }
+.understood .unsupported { color: #fcd34d; margin-top: 4px; }
+.understood .notice { color: var(--muted); margin-top: 4px; }

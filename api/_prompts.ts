@@ -67,10 +67,14 @@ Settings (all sliders 0..1 unless stated):
 - cross: 0 never delivers early/wide balls .. 1 crosses at every chance. 0.5 is normal.
 - mark: opponent shirt number to man-mark, or null for zonal.
 
+The coach may write several sentences with lots of detail. Read all of it. Translate every part that maps onto the settings above. Some details the simulator cannot represent (e.g. "weak left foot", "good in the air", "has a long throw", "plays better in big games"): list those under "unsupported" instead of guessing, and never invent settings for them.
+
 Reply with ONLY a JSON object, no prose and no code fences:
 {"roleName": "<2-4 word role label for this player, e.g. Deep-lying playmaker>",
  "role": "<base role code, only if it should change, else omit>",
  "inst": {<only the settings the instruction implies; omit the rest>},
+ "notes": ["<up to 5 short bullets: which words of the coach's text you turned into which setting, e.g. 'drops between the centre-backs -> depth -0.6'>"],
+ "unsupported": ["<parts of the text the simulator cannot model, if any>"],
  "summary": "<one sentence on how the player will now behave>"}
 Use decisive values (0.1-0.2 for "rarely", 0.8-0.95 for "always/at every chance"). Do not invent settings. Left/right are from the player's own team's perspective (facing the opponent's goal).`,
 };

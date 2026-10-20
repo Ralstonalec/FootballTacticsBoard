@@ -58,6 +58,8 @@ ok('describeChanges lists what changed in words', diff.some((d) => /^Shoot:/.tes
 const ai = parseRoleReply('```json\n{"roleName":"Dropping nine","role":"ST","inst":{"depth":-5,"roam":0.9,"passing":"wild","hax":1,"lane":null,"mark":3,"cross":"x"},"summary":"Drops in."}\n```', opp);
 ok('AI reply: clamps, drops unknown/invalid keys', ai.inst.depth === -1 && ai.inst.roam === 0.9 && !('hax' in ai.inst) && ai.inst.passing === undefined && ai.inst.lane === null && ai.inst.cross === undefined, ai.inst);
 ok('AI reply: mark number -> opponent id; role/roleName kept', ai.inst.mark === opp.players[2].id && ai.role === 'ST' && ai.roleName === 'Dropping nine');
+const ai2 = parseRoleReply('{"roleName":"Pivot","inst":{"depth":-0.5},"notes":["drops between the centre-backs -> depth -0.5", 5, "", "plays short -> passing safe"],"unsupported":["weak left foot"],"summary":"Drops in and recycles."}', opp);
+ok('AI reply: notes + unsupported parsed, junk entries dropped', ai2.notes.length === 2 && ai2.unsupported[0] === 'weak left foot' && ai2.summary.startsWith('Drops in'), ai2);
 let threw = false; try { parseRoleReply('no json', opp); } catch { threw = true; }
 ok('AI reply: non-JSON throws friendly error', threw);
 

@@ -47,12 +47,13 @@ Top bar → **🎞 Shape Lab**. Both teams' formations react to the ball using t
 
 Click any player → **Player** tab → **Role & instructions**:
 
-- **Role templates:** one click applies a known role (ball-playing centre-back, sweeper, anchor man, deep-lying playmaker,
-  box-to-box, half-space runner, number 10, traditional winger, inside forward, target man, poacher, false 9, pressing forward,
-  overlapping / inverted full-back, attacking wing-back…).
-- **Say it in your own words:** "drop deep between the centre-backs, play safe passes, never shoot". **Apply** understands common
-  football phrases offline (including negatives, left/right, half-spaces and "mark their number 9"); **✨ Apply with AI** handles
-  anything else. Either way the panel shows exactly what it understood and which settings changed.
+- **Describe the player in your own words** (as much detail as you like) and press **✨ Analyse & apply**. The AI reads it, sets how
+  the player plays, shows which words became which settings, and lists any detail the simulator can't model (e.g. "weak left foot").
+  If the AI isn't set up or the call fails, it falls back to a built-in interpreter for common football phrases (negations,
+  left/right, half-spaces, "mark their number 9") and tells you so. **Offline only** skips the AI.
+- **Role templates:** or start from a known role (ball-playing centre-back, sweeper, anchor man, deep-lying playmaker, box-to-box,
+  half-space runner, number 10, traditional winger, inside forward, target man, poacher, false 9, pressing forward, overlapping /
+  inverted full-back, attacking wing-back…).
 - **What the simulator actually does with it:** besides roam / press / runs / dribble / shoot / width / passing / marking, players now
   have **depth** (drop deep to link play ↔ stay on the last line), **channel** (occupy the left wing, half-space, centre…),
   **track back** and **crossing**. All are in *Fine-tune every setting* and can be changed mid-match.

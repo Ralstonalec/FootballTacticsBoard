@@ -22,7 +22,7 @@ const QUICK: [string, (i: Instructions) => Partial<Instructions>][] = [
   ['Zonal', () => ({ mark: null })],
 ];
 
-export interface BriefReport { source: 'offline' | 'ai' | 'template'; notes: string[]; changes: string[]; unmatched?: boolean; error?: string }
+export interface BriefReport { source: 'offline' | 'ai' | 'template'; notes: string[]; changes: string[]; unmatched?: boolean; error?: string; notice?: string; summary?: string; unsupported?: string[] }
 
 const EXAMPLES = [
   'Drop deep between the centre-backs, play safe passes, never shoot',
@@ -74,43 +74,47 @@ export function PlayerPanel(props: {
         {ROLES.map((r) => <option key={r} value={r}>{r} · {ROLE_LABEL[r]}</option>)}
       </select>
 
-      <h4>Role &amp; instructions</h4>
+      <h4>Describe how this player should play</h4>
+      <textarea
+        className="brief"
+        rows={5}
+        value={p.brief ?? ''}
+        onChange={(e) => props.onChange({ brief: e.target.value })}
+        placeholder="Write as much detail as you like. e.g. “Our pivot. Drops between the centre-backs to start attacks, plays short and safe, never shoots, and screens the back four when we lose it. If their number 10 gets the ball, stick tight to him.”"
+        aria-label="Describe how this player should play"
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && (p.brief ?? '').trim()) props.onApplyBrief(p.brief ?? '', true); }}
+      />
+      <button className="primary wide" onClick={() => props.onApplyBrief(p.brief ?? '', true)} disabled={props.briefBusy || !(p.brief ?? '').trim()}
+        title="The AI reads your description and sets how this player plays (Ctrl/Cmd+Enter)">
+        {props.briefBusy ? '✨ Analysing…' : props.aiReady ? '✨ Analyse & apply' : '✨ Analyse & apply (built-in interpreter, AI not set up)'}
+      </button>
+      <div className="row subtle">
+        <select className="full" value="" onChange={(e) => e.target.value && props.onChange({ brief: e.target.value })} aria-label="Insert an example">
+          <option value="">Insert an example…</option>
+          {EXAMPLES.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <button className="fit" onClick={() => props.onApplyBrief(p.brief ?? '', false)} disabled={!(p.brief ?? '').trim()} title="Skip the AI: only understands common football phrases">Offline only</button>
+      </div>
+      {props.report && (
+        <div className={`understood ${props.report.error ? 'bad' : ''}`}>
+          <b>{props.report.error ? `⚠️ ${props.report.error}` : props.report.unmatched ? '🤔 Not recognised' : props.report.source === 'ai' ? '✨ Analysis' : props.report.source === 'template' ? '✅ Role applied' : '✅ Understood as'}</b>
+          {props.report.summary && <div className="summary">{props.report.summary}</div>}
+          {props.report.notes.map((n, k) => <div key={k}>• {n}</div>)}
+          {props.report.unmatched && <div className="muted">I didn't recognise any football instructions in that. Use words like “drop deep”, “stay wide”, “press”, “cross”, “mark their number 9”, or set up the AI to analyse free-form descriptions.</div>}
+          {props.report.unsupported && props.report.unsupported.length > 0 && <div className="unsupported">⚠️ The simulator can't model: {props.report.unsupported.join('; ')}</div>}
+          {props.report.notice && <div className="notice">ℹ️ {props.report.notice}</div>}
+          {props.report.changes.length > 0 && <div className="changes">{props.report.changes.map((c, k) => <span key={k}>{c}</span>)}</div>}
+        </div>
+      )}
       <select
         className="full"
         value=""
         onChange={(e) => e.target.value && props.onTemplate(e.target.value)}
         title="Applies a known role: base position plus a tuned set of behaviours"
       >
-        <option value="">Choose a role template…</option>
+        <option value="">…or start from a role template</option>
         {ROLE_TEMPLATES.map((t) => <option key={t.name} value={t.name}>{t.name} ({t.role})</option>)}
       </select>
-      <textarea
-        rows={3}
-        value={p.brief ?? ''}
-        onChange={(e) => props.onChange({ brief: e.target.value })}
-        placeholder="In your own words: what should this player do? e.g. “Drop deep between the centre-backs, play safe passes, never shoot”"
-        aria-label="What should this player do?"
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && (p.brief ?? '').trim()) props.onApplyBrief(p.brief ?? '', false); }}
-      />
-      <select className="full" value="" onChange={(e) => e.target.value && props.onChange({ brief: e.target.value })} aria-label="Insert an example">
-        <option value="">Insert an example instruction…</option>
-        {EXAMPLES.map((x) => <option key={x} value={x}>{x}</option>)}
-      </select>
-      <div className="row">
-        <button className="primary" onClick={() => props.onApplyBrief(p.brief ?? '', false)} disabled={!(p.brief ?? '').trim()} title="Understands common football phrases without the AI">Apply</button>
-        <button onClick={() => props.onApplyBrief(p.brief ?? '', true)} disabled={!props.aiReady || props.briefBusy || !(p.brief ?? '').trim()}
-          title={props.aiReady ? 'Let the AI interpret anything you wrote' : 'AI is not set up (🤖 button, top right)'}>
-          {props.briefBusy ? 'Thinking…' : '✨ Apply with AI'}
-        </button>
-      </div>
-      {props.report && (
-        <div className={`understood ${props.report.error ? 'bad' : ''}`}>
-          <b>{props.report.error ? `⚠️ ${props.report.error}` : props.report.unmatched ? '🤔 Not recognised' : props.report.source === 'ai' ? '✨ Understood as' : props.report.source === 'template' ? '✅ Role applied' : '✅ Understood as'}</b>
-          {props.report.notes.map((n, k) => <div key={k}>• {n}</div>)}
-          {props.report.unmatched && <div className="muted">I didn't recognise any football instructions in that. Try ✨ Apply with AI, or use words like “drop deep”, “stay wide”, “press”, “cross”, “mark their number 9”.</div>}
-          {props.report.changes.length > 0 && <div className="changes">{props.report.changes.map((c, k) => <span key={k}>{c}</span>)}</div>}
-        </div>
-      )}
 
       <h4>{props.live ? 'Coach now (applies instantly)' : 'Quick coaching'}</h4>
       <div className="quick">

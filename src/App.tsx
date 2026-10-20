@@ -237,7 +237,7 @@ export function App() {
   // ---- per-player role & free-text instructions
   const [briefReport, setBriefReport] = useState<{ id: string; report: BriefReport } | null>(null);
   const [briefBusy, setBriefBusy] = useState(false);
-  const commitRole = (r: { role?: Role; roleName?: string; inst: Partial<Instructions> }, brief: string, source: BriefReport['source'], notes: string[]) => {
+  const commitRole = (r: { role?: Role; roleName?: string; inst: Partial<Instructions> }, brief: string, source: BriefReport['source'], notes: string[], extra: { notice?: string; summary?: string; unsupported?: string[] } = {}) => {
     if (!sel) return;
     const before = sel.player;
     const opp = teams[1 - sel.team];
@@ -247,7 +247,7 @@ export function App() {
     const changes = describeChanges(before.inst, next.inst, label);
     if (!locked && r.role && r.role !== before.role) changes.unshift(`Position: ${before.role} → ${r.role}`);
     if (locked && r.role && r.role !== before.role) notes = [...notes, `(Base position stays ${before.role} during a match; the behaviours were applied.)`];
-    setBriefReport({ id: before.id, report: { source, notes, changes } });
+    setBriefReport({ id: before.id, report: { source, notes, changes, ...extra } });
     coachNote(sel.team, `#${sel.index + 1} ${before.role} → ${r.roleName ?? 'new instructions'}`);
     setTick((t) => t + 1);
   };
@@ -256,18 +256,23 @@ export function App() {
     if (!sel || !t) return;
     const id = sel.player.id;
     const opp = teams[1 - sel.team];
-    if (!useAI) {
+    const offline = (notice?: string) => {
       const r = interpretBrief(t, sel.player, opp);
-      if (r.unmatched) { patchPlayer(sel.team, id, (p) => ({ ...p, brief: t })); setBriefReport({ id, report: { source: 'offline', notes: [], changes: [], unmatched: true } }); return; }
-      commitRole(r, t, 'offline', r.notes);
-      return;
-    }
+      if (r.unmatched) {
+        patchPlayer(sel.team, id, (p) => ({ ...p, brief: t }));
+        setBriefReport({ id, report: { source: 'offline', notes: [], changes: [], unmatched: true, notice } });
+        return;
+      }
+      commitRole(r, t, 'offline', r.notes, { notice });
+    };
+    if (!useAI) { offline(); return; }
+    if (!aiReady) { offline('The AI isn’t set up, so I used the built-in interpreter, which only knows common football phrases. Set up the AI (🤖 button, top right) to have your description analysed properly.'); return; }
     setBriefBusy(true);
     try {
       const r = await askRole({ text: t, player: sel.player, number: sel.index + 1, team: teams[sel.team], opp, browserKey });
-      commitRole(r, t, 'ai', [r.summary || 'Applied the AI’s interpretation.']);
+      commitRole(r, t, 'ai', r.notes.length ? r.notes : [r.summary || 'Applied the AI’s interpretation.'], { summary: r.notes.length ? r.summary : undefined, unsupported: r.unsupported });
     } catch (e) {
-      setBriefReport({ id, report: { source: 'ai', notes: [], changes: [], error: e instanceof Error ? e.message : String(e) } });
+      offline(`The AI call failed (${e instanceof Error ? e.message : String(e)}), so I used the built-in interpreter instead.`);
     } finally {
       setBriefBusy(false);
     }
