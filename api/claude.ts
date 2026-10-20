@@ -1,4 +1,4 @@
-import { SYSTEM, type AIMode } from './_prompts';
+import { SYSTEM, type AIMode } from './_prompts.js';
 
 // Vercel serverless function. The API key never reaches the browser.
 //   OPENROUTER_API_KEY         (required)
@@ -29,6 +29,15 @@ interface Req { method?: string; body?: unknown; url?: string; query?: Record<st
 interface Res { status(c: number): Res; json(b: unknown): void }
 
 export default async function handler(req: Req, res: Res): Promise<void> {
+  try {
+    await handle(req, res);
+  } catch (e) {
+    console.error('api/claude failed:', e);
+    res.status(500).json({ error: `The AI function crashed: ${e instanceof Error ? e.message : String(e)}` });
+  }
+}
+
+async function handle(req: Req, res: Res): Promise<void> {
   const key = process.env.OPENROUTER_API_KEY;
   if (req.method === 'GET') {
     const wantsCheck = req.query?.check === '1' || (req.url ?? '').includes('check=1');
