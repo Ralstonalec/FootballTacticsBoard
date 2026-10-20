@@ -31,6 +31,34 @@ npm run simtest -- 30 4-3-3 4-4-2 42   # headless calibration: matches, home for
   - *Ask Claude* – with an Anthropic API key (⚙ in the feedback panel, stored only in your browser) Claude critiques free-form
     ideas using your exact setup and the latest simulation results.
 
+## Live coaching
+
+Select any player at any moment, including mid-match, and change what they do:
+
+- **Quick-coach buttons** (Push up, Press hard, Hold position, Go wide, Cut inside, Mark nearest, …) and every slider
+  apply to the running simulation instantly. Team tactics too. Pause, adjust, resume.
+- **Coach the team in words**: type "left back overlap, both strikers press, number 10 stays central" and the assistant
+  manager AI turns it into per-player changes (it sees the live clock, score, stats and positions). Every change is
+  listed in the coach log and the match feed. Replies are validated and clamped before they reach the simulator.
+- Coaching also updates the board, so what you learn mid-match carries into the next run.
+
+## Deploying to Vercel (AI with a server-side key)
+
+The AI calls go through `api/claude.ts`, a Vercel serverless function, so your Anthropic key never reaches the browser.
+
+1. Push this repo to GitHub and import it in Vercel (framework preset: Vite; defaults are fine).
+2. Project → Settings → Environment Variables:
+   - `ANTHROPIC_API_KEY` = your key (Production + Preview)
+   - `ANTHROPIC_MODEL` = optional, defaults to `claude-sonnet-5-5`
+3. Redeploy. The ⚙ panel shows "Server-side AI is configured" and the coach/Ask Claude buttons enable.
+
+The function only accepts two fixed modes (`feedback`, `coach`) with server-owned system prompts, caps request size and
+output tokens, and has a best-effort per-instance rate limit. It does **not** authenticate users, so anyone who finds the
+URL can spend your credits. Before sharing it publicly add Vercel Firewall rate limiting or password protection.
+
+Local dev: `npm run dev` has no `/api`; either use `npx vercel dev` (reads `.env.local`) or paste a key into ⚙ (browser-only, dev use).
+Tests: `npx tsx scripts/apitest.ts` (function + reply sanitising), `npx tsx scripts/livecoach.ts` (mid-match changes affect the sim).
+
 ## Layout
 
 ```
@@ -40,7 +68,9 @@ src/engine/sim.ts         the match simulator (agent movement, passing, pressing
 src/engine/batch.ts       multi-match runner and aggregation
 src/engine/analysis.ts    structural + simulation-based feedback rules
 src/engine/ideas.ts       offline interpreter for typed ideas
-src/engine/ai.ts          Claude API client (browser, user-supplied key)
+src/engine/ai.ts          AI client: feedback + live-coach commands (validated/clamped)
+api/claude.ts             Vercel serverless proxy holding the API key
+api/_prompts.ts           system prompts (server-owned)
 src/components/           Pitch canvas and the side panels
 scripts/simtest.ts        headless calibration harness
 ```

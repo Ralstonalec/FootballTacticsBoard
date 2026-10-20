@@ -74,7 +74,7 @@ export const emptyStats = (): TeamStats => ({
   counterShots: 0, entriesByChannel: [0, 0, 0], xgByChannel: [0, 0, 0], touchGrid: new Array(GX * GY).fill(0),
 });
 
-export interface MatchEvent { t: number; team: TeamIdx; text: string; kind: 'goal' | 'shot' }
+export interface MatchEvent { t: number; team: TeamIdx; text: string; kind: 'goal' | 'shot' | 'coach' }
 
 const attDir = (team: TeamIdx) => (team === 0 ? 1 : -1);
 const progress = (team: TeamIdx, x: number) => (team === 0 ? x / PW : 1 - x / PW);
@@ -132,6 +132,24 @@ export class Match {
     const m = Math.floor(this.t / 60);
     const s = Math.floor(this.t % 60);
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  /** Live coaching: change one player's instructions mid-match. */
+  coachPlayer(id: string, patch: Partial<PlayerSpec['inst']>, note?: string): void {
+    const p = this.findPlayer(id);
+    if (!p) return;
+    Object.assign(p.spec.inst, patch);
+    if (note) this.log(p.team, note);
+  }
+
+  coachTeam(team: TeamIdx, patch: Partial<Team['tactics']>, note?: string): void {
+    Object.assign(this.teams[team].tactics, patch);
+    if (note) this.log(team, note);
+  }
+
+  log(team: TeamIdx, text: string): void {
+    this.events.push({ t: this.t, team, kind: 'coach', text });
+    if (this.events.length > 200) this.events.shift();
   }
 
   findPlayer(id: string): SimPlayer | undefined {

@@ -14,7 +14,8 @@ export function FeedbackPanel(props: {
   claudeText: string;
   claudeBusy: boolean;
   claudeError: string;
-  hasKey: boolean;
+  aiReady: boolean;
+  serverAI: boolean;
   apiKey: string; model: string;
   onApiKey: (k: string) => void; onModel: (m: string) => void;
   onAnalyze: (idea: string) => void;
@@ -39,7 +40,8 @@ export function FeedbackPanel(props: {
     <Section title={`Tactical feedback — ${props.sideName}`} right={<button onClick={() => setSettings(!settings)} title="AI settings">⚙</button>}>
       {settings && (
         <div className="settings">
-          <label className="field">Anthropic API key (stored only in this browser)
+          <p className="muted">{props.serverAI ? '✅ Server-side AI is configured (key stays on the server).' : 'Server-side AI not detected. For local dev only, paste a key below; it stays in this browser.'}</p>
+          <label className="field">Local-dev API key (optional)
             <input className="text" type="password" value={props.apiKey} placeholder="sk-ant-…" onChange={(e) => props.onApiKey(e.target.value)} />
           </label>
           <label className="field">Model
@@ -55,7 +57,7 @@ export function FeedbackPanel(props: {
       />
       <div className="row">
         <button className="primary" onClick={() => props.onAnalyze(idea)}>Analyze</button>
-        <button onClick={() => props.onAsk(idea)} disabled={!props.hasKey || props.claudeBusy} title={props.hasKey ? 'Ask Claude for a full critique' : 'Add an API key in ⚙ to enable'}>
+        <button onClick={() => props.onAsk(idea)} disabled={!props.aiReady || props.claudeBusy} title={props.aiReady ? 'Ask Claude for a full critique' : 'AI is not configured: set ANTHROPIC_API_KEY on Vercel, or paste a key in ⚙ for local dev'}>
           {props.claudeBusy ? 'Asking Claude…' : '✨ Ask Claude'}
         </button>
       </div>
@@ -68,7 +70,7 @@ export function FeedbackPanel(props: {
           {props.idea.apply && <button onClick={props.onApplyIdea}>Apply this idea to the board</button>}
         </div>
       )}
-      {props.ideaMiss && <p className="muted">I didn't recognise a specific concept in that text (offline mode understands: press, low block, counter, possession, false 9, wing-backs, overload left/right, inverted full-backs, back three/five, offside trap). Add an API key in ⚙ to have Claude critique free-form ideas.</p>}
+      {props.ideaMiss && <p className="muted">I didn't recognise a specific concept in that text (offline mode understands: press, low block, counter, possession, false 9, wing-backs, overload left/right, inverted full-backs, back three/five, offside trap). Configure the AI (see ⚙) to have Claude critique free-form ideas.</p>}
 
       {props.claudeError && <p className="error">{props.claudeError}</p>}
       {props.claudeText && (

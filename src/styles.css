@@ -63,3 +63,12 @@ li.warn { border-left-color: #f59e0b !important; } li.risk { border-left-color: 
 .settings { background: var(--panel2); padding: 8px; border-radius: 8px; margin-bottom: 8px; }
 @media (max-width: 1250px) { .layout { grid-template-columns: 280px 1fr; } .layout > .col:last-child { grid-column: 1 / -1; } .center { position: static; } }
 @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+.quick { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.quick button { padding: 3px 8px; font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 8px; }
+.chip { padding: 2px 8px; font-size: 11.5px; border-radius: 99px; color: var(--muted); }
+ul.coach-log { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+ul.coach-log li.coach { background: var(--panel2); border-radius: 8px; padding: 6px 8px; }
+ul.coach-log li.you { color: var(--muted); }
+ul.coach-log .change { color: #86efac; margin-left: 6px; }
+ul.events li.coach { color: #86efac; }

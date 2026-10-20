@@ -7,10 +7,12 @@ import { FeedbackPanel } from './components/FeedbackPanel';
 import { buildTeam } from './engine/formations';
 import { Instructions, PlayerSpec, Role, Team, makePlayer } from './engine/types';
 import { Match } from './engine/sim';
+import { toWorld } from './engine/geometry';
 import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
-import { askClaude } from './engine/ai';
+import { askCoach, askFeedback, probeServer } from './engine/ai';
+import { CoachPanel, CoachLogEntry } from './components/CoachPanel';
 
 const STATE_KEY = 'ftb.board.v1';
 const AI_KEY = 'ftb.ai.v1';
@@ -59,6 +61,12 @@ export function App() {
   const [apiKey, setApiKey] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').key ?? ''; } catch { return ''; } });
   const [model, setModel] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').model ?? 'claude-sonnet-5-5'; } catch { return 'claude-sonnet-5-5'; } });
   const [dynamicFindings, setDynamicFindings] = useState(0);
+  const [serverAI, setServerAI] = useState(false);
+  const [coachBusy, setCoachBusy] = useState(false);
+  const [coachLog, setCoachLog] = useState<CoachLogEntry[]>([]);
+  useEffect(() => { void probeServer().then(setServerAI); }, []);
+  const aiReady = serverAI || apiKey.trim().length > 0;
+  const browserKey = serverAI || !apiKey.trim() ? undefined : { apiKey: apiKey.trim(), model };
 
   const locked = matchRef.current !== null;
   const teams: [Team, Team] = [home, away];
@@ -74,6 +82,19 @@ export function App() {
     try { localStorage.setItem(AI_KEY, JSON.stringify({ key: apiKey, model })); } catch { /* ignore */ }
   }, [apiKey, model]);
 
+  // Live coaching: any change to instructions or tactics reaches the running match immediately
+  useEffect(() => {
+    const m = matchRef.current;
+    if (!m) return;
+    ([home, away] as Team[]).forEach((team, ti) => {
+      Object.assign(m.teams[ti].tactics, team.tactics);
+      for (const spec of team.players) {
+        const sp = m.findPlayer(spec.id);
+        if (sp) Object.assign(sp.spec.inst, spec.inst);
+      }
+    });
+  }, [home, away]);
+
   // ---- selection helpers
   const find = (id: string | null): { team: 0 | 1; player: PlayerSpec; index: number } | null => {
     if (!id) return null;
@@ -87,6 +108,59 @@ export function App() {
 
   const patchPlayer = (teamIdx: 0 | 1, id: string, fn: (p: PlayerSpec) => PlayerSpec) =>
     setTeam(teamIdx, (t) => ({ ...t, players: t.players.map((p) => (p.id === id ? fn(p) : p)) }));
+
+  const coachNote = (teamIdx: 0 | 1, text: string) => matchRef.current?.log(teamIdx, `Coach: ${text}`);
+  const quickCoach = (fn: (i: Instructions) => Partial<Instructions>, label: string) => {
+    if (!sel) return;
+    patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, inst: { ...p.inst, ...fn(p.inst) } }));
+    coachNote(sel.team, `#${sel.index + 1} ${sel.player.role} → ${label}`);
+    setTick((t) => t + 1);
+  };
+  const markNearest = () => {
+    if (!sel) return;
+    const m = matchRef.current;
+    const opp = teams[1 - sel.team];
+    const live = m?.findPlayer(sel.player.id);
+    const [mx, my] = live ? [live.x, live.y] : toWorld(sel.team, sel.player.x, sel.player.y);
+    let best: PlayerSpec | null = null;
+    let bd = 1e9;
+    for (const o of opp.players) {
+      if (o.role === 'GK') continue;
+      const lo = m?.findPlayer(o.id);
+      const [ox, oy] = lo ? [lo.x, lo.y] : toWorld((1 - sel.team) as 0 | 1, o.x, o.y);
+      const d = Math.hypot(ox - mx, oy - my);
+      if (d < bd) { bd = d; best = o; }
+    }
+    if (!best) return;
+    const b = best;
+    patchPlayer(sel.team, sel.player.id, (p) => ({ ...p, inst: { ...p.inst, mark: b.id } }));
+    coachNote(sel.team, `#${sel.index + 1} ${sel.player.role} now marks opp #${opp.players.indexOf(b) + 1} ${b.role}`);
+    setTick((t) => t + 1);
+  };
+  const sendCoach = async (command: string) => {
+    setCoachBusy(true);
+    setCoachLog((l) => [...l, { from: 'you', text: command }]);
+    try {
+      const res = await askCoach({
+        command, team: sideTeam, opp: oppTeam, side, match: matchRef.current,
+        selectedNumber: sel && sel.team === side ? sel.index + 1 : undefined, browserKey,
+      });
+      for (const c of res.changes) {
+        patchPlayer(side, c.playerId, (p) => ({ ...p, inst: { ...p.inst, ...c.patch } }));
+        coachNote(side, c.label);
+      }
+      if (Object.keys(res.team).length) {
+        setTeam(side, (t) => ({ ...t, tactics: { ...t.tactics, ...res.team } }));
+        coachNote(side, `team: ${Object.entries(res.team).map(([k, v]) => `${k} ${Math.round((v as number) * 100)}%`).join(', ')}`);
+      }
+      setCoachLog((l) => [...l, { from: 'coach', text: res.say, changes: [...res.changes.map((c) => c.label), ...(Object.keys(res.team).length ? ['team tactics adjusted'] : [])] }]);
+      setTick((t) => t + 1);
+    } catch (e) {
+      setCoachLog((l) => [...l, { from: 'coach', text: `⚠️ ${e instanceof Error ? e.message : String(e)}` }]);
+    } finally {
+      setCoachBusy(false);
+    }
+  };
 
   // ---- simulation control
   const startMatch = () => {
@@ -190,8 +264,7 @@ export function App() {
     setClaudeBusy(true);
     setClaudeError('');
     try {
-      const res = await askClaude({ apiKey, model, idea: text, team: sideTeam, opp: oppTeam, agg: aggStale ? null : agg, side });
-      setClaudeText(res);
+      setClaudeText(await askFeedback({ idea: text, team: sideTeam, opp: oppTeam, agg: aggStale ? null : agg, side, browserKey }));
     } catch (e) {
       setClaudeError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -242,6 +315,9 @@ export function App() {
               players: t.players.map((p) => (p.role === sel.player.role ? { ...p, inst: { ...sel.player.inst, mark: null } } : p)),
             }))}
             onRemove={() => sel && removePlayer(sel.player.id)}
+            onQuick={quickCoach}
+            onMarkNearest={markNearest}
+            live={locked}
           />
         </aside>
 
@@ -288,6 +364,14 @@ export function App() {
             onBatch={runBatchNow}
             onFinish={finishMatch}
           />
+          <CoachPanel
+            aiReady={aiReady}
+            busy={coachBusy}
+            live={locked}
+            log={coachLog}
+            selectedLabel={sel && sel.team === side ? `#${sel.index + 1} ${sel.player.role}` : null}
+            onSend={sendCoach}
+          />
           <FeedbackPanel
             sideName={sideTeam.name}
             findings={staticF}
@@ -297,7 +381,8 @@ export function App() {
             claudeText={claudeText}
             claudeBusy={claudeBusy}
             claudeError={claudeError}
-            hasKey={apiKey.trim().length > 0}
+            aiReady={aiReady}
+            serverAI={serverAI}
             apiKey={apiKey}
             model={model}
             onApiKey={setApiKey}
