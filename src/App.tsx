@@ -11,7 +11,9 @@ import { toWorld } from './engine/geometry';
 import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
-import { askCoach, askExplain, askFeedback, askScenario, probeServer, Scenario, ShapeSnapshot } from './engine/ai';
+import { askCoach, askDecisions, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
+import { DecisionPanel, DecisionLogEntry, DecisionOpts } from './components/DecisionPanel';
+import { ORDERS } from './engine/sim';
 import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
 import { PLAYBOOKS } from './engine/playbooks';
 import { snapshotTeam } from './engine/shape';
@@ -61,13 +63,73 @@ export function App() {
   const [claudeText, setClaudeText] = useState('');
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [claudeError, setClaudeError] = useState('');
-  const [apiKey, setApiKey] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').key ?? ''; } catch { return ''; } });
-  const [model, setModel] = useState(() => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}').model ?? 'anthropic/claude-sonnet-4.5'; } catch { return 'anthropic/claude-sonnet-4.5'; } });
+  const savedAI = (): { key?: string; textModel?: string; decisionModel?: string; model?: string } => { try { return JSON.parse(localStorage.getItem(AI_KEY) ?? '{}'); } catch { return {}; } };
+  const [apiKey, setApiKey] = useState(() => savedAI().key ?? '');
+  const [textModel, setTextModel] = useState(() => savedAI().textModel ?? savedAI().model ?? 'anthropic/claude-sonnet-4.5');
+  const [decisionModel, setDecisionModel] = useState(() => savedAI().decisionModel ?? 'anthropic/claude-haiku-4.5');
   const [dynamicFindings, setDynamicFindings] = useState(0);
-  const [serverAI, setServerAI] = useState(false);
+  const [serverInfo, setServerInfo] = useState<ServerInfo>({ configured: false });
+  const serverAI = serverInfo.configured;
   const [coachBusy, setCoachBusy] = useState(false);
   const [coachLog, setCoachLog] = useState<CoachLogEntry[]>([]);
-  useEffect(() => { void probeServer().then(setServerAI); }, []);
+  useEffect(() => { void probeServer().then(setServerInfo); }, []);
+
+  // AI decision model (players' in-match decisions)
+  const [decOpts, setDecOpts] = useState<DecisionOpts>({ home: false, away: false, every: 20, wait: true, cap: 80 });
+  const [decLog, setDecLog] = useState<DecisionLogEntry[]>([]);
+  const [decCalls, setDecCalls] = useState(0);
+  const [decThinking, setDecThinking] = useState(false);
+  const dec = useRef({ opts: decOpts, key: undefined as BrowserKey | undefined, inflight: false, calls: 0, errors: 0, lastT: [-1e9, -1e9] as [number, number], lastPoss: [-1, -1] as [number, number], lastScore: 0 });
+  dec.current.opts = decOpts;
+
+  const runDecision = async (m: Match, side: 0 | 1) => {
+    const D = dec.current;
+    D.inflight = true;
+    setDecThinking(true);
+    D.lastT[side] = m.t;
+    try {
+      const res = await askDecisions({ match: m, side, browserKey: D.key });
+      if (matchRef.current !== m) return;
+      D.calls++; D.errors = 0;
+      const lines: string[] = [];
+      for (const o of res.orders) {
+        if (!m.giveOrder(o.playerId, o.order, o.seconds, o.why, o.markId)) continue;
+        const idx = m.teams[side].players.findIndex((p) => p.id === o.playerId);
+        const text = `#${idx + 1} ${m.teams[side].players[idx].role} → ${ORDERS[o.order].label}${o.why ? ` (${o.why})` : ''}`;
+        lines.push(text);
+        m.log(side, `AI: ${text}`, 'ai');
+      }
+      setDecLog((l) => [...l, { clock: m.clock, team: side, say: res.say || (lines.length ? '' : 'No changes needed.'), orders: lines }].slice(-30));
+      setDecCalls(D.calls);
+    } catch (e) {
+      D.errors++;
+      setDecLog((l) => [...l, { clock: m.clock, team: side, say: `⚠️ ${e instanceof Error ? e.message : String(e)}`, orders: [], error: true }].slice(-30));
+      if (D.errors >= 3) { setDecOpts((o) => ({ ...o, home: false, away: false })); }
+    } finally {
+      D.inflight = false;
+      setDecThinking(false);
+    }
+  };
+  // called every frame from the match loop: decides whether the model should be consulted now
+  const maybeDecide = (m: Match) => {
+    const D = dec.current;
+    if (D.inflight || m.finished || D.calls >= D.opts.cap) return;
+    const owner = m.ball.owner;
+    const poss = owner ? owner.team : m.ball.lastTeam;
+    const goals = m.score[0] + m.score[1];
+    for (const side of [0, 1] as const) {
+      if (!(side === 0 ? D.opts.home : D.opts.away)) continue;
+      const since = m.t - D.lastT[side];
+      const turnover = poss !== D.lastPoss[side] && since >= 6;
+      const goal = goals !== D.lastScore && since >= 3;
+      if (since >= D.opts.every || turnover || goal) {
+        D.lastPoss[side] = poss;
+        D.lastScore = goals;
+        void runDecision(m, side);
+        return;
+      }
+    }
+  };
 
   // shape lab
   const [lab, setLab] = useState(false);
@@ -82,7 +144,9 @@ export function App() {
   });
   const patchLab = (p: Partial<LabUI>) => setLabUI((u) => ({ ...u, ...p }));
   const aiReady = serverAI || apiKey.trim().length > 0;
-  const browserKey = serverAI || !apiKey.trim() ? undefined : { apiKey: apiKey.trim(), model };
+  const browserKey: BrowserKey | undefined = serverAI || !apiKey.trim() ? undefined : { apiKey: apiKey.trim(), textModel, decisionModel };
+  dec.current.key = browserKey;
+  const activeDecisionModel = serverAI ? serverInfo.decisionModel ?? '' : decisionModel;
 
   const locked = matchRef.current !== null;
   const teams: [Team, Team] = [home, away];
@@ -95,8 +159,8 @@ export function App() {
     try { localStorage.setItem(STATE_KEY, JSON.stringify({ home, away })); } catch { /* ignore */ }
   }, [home, away]);
   useEffect(() => {
-    try { localStorage.setItem(AI_KEY, JSON.stringify({ key: apiKey, model })); } catch { /* ignore */ }
-  }, [apiKey, model]);
+    try { localStorage.setItem(AI_KEY, JSON.stringify({ key: apiKey, textModel, decisionModel })); } catch { /* ignore */ }
+  }, [apiKey, textModel, decisionModel]);
 
   // Live coaching: any change to instructions or tactics reaches the running match immediately
   useEffect(() => {
@@ -293,6 +357,8 @@ export function App() {
   // ---- simulation control
   const startMatch = () => {
     matchRef.current = new Match(structuredClone(home), structuredClone(away), Math.floor(Math.random() * 1e9), 0.1);
+    Object.assign(dec.current, { calls: 0, errors: 0, lastT: [-1e9, -1e9], lastPoss: [-1, -1], lastScore: 0, inflight: false });
+    setDecCalls(0); setDecLog([]);
     setPlaying(true);
     setTick((t) => t + 1);
   };
@@ -312,13 +378,15 @@ export function App() {
     const loop = (now: number) => {
       const m = matchRef.current;
       if (!m) return;
-      acc += Math.min(0.1, (now - last) / 1000) * speed;
+      const waiting = dec.current.inflight && dec.current.opts.wait;
+      acc += waiting ? 0 : Math.min(0.1, (now - last) / 1000) * speed;
       last = now;
       let guard = 0;
       while (acc >= m.dt && !m.finished && guard++ < 1500) {
         m.step(m.dt);
         acc -= m.dt;
       }
+      maybeDecide(m);
       if (m.finished) setPlaying(false);
       if (now - lastUi > 200 || m.finished) {
         lastUi = now;
@@ -534,6 +602,17 @@ export function App() {
             onFinish={finishMatch}
           />
           )}
+          {!lab && matchRef.current && (
+            <DecisionPanel
+              opts={decOpts}
+              onOpts={(o) => setDecOpts((d) => ({ ...d, ...o }))}
+              aiReady={aiReady}
+              model={activeDecisionModel}
+              calls={decCalls}
+              thinking={decThinking}
+              log={decLog}
+            />
+          )}
           <CoachPanel
             aiReady={aiReady}
             busy={coachBusy}
@@ -554,9 +633,11 @@ export function App() {
             aiReady={aiReady}
             serverAI={serverAI}
             apiKey={apiKey}
-            model={model}
+            textModel={serverAI ? serverInfo.textModel ?? '' : textModel}
+            decisionModel={serverAI ? serverInfo.decisionModel ?? '' : decisionModel}
             onApiKey={setApiKey}
-            onModel={setModel}
+            onTextModel={setTextModel}
+            onDecisionModel={setDecisionModel}
             onAnalyze={analyze}
             onApplyIdea={() => idea?.apply && setTeam(editing, (t) => idea.apply!(t))}
             onAsk={ask}

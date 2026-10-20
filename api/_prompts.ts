@@ -1,4 +1,4 @@
-export type AIMode = 'feedback' | 'coach' | 'scenario' | 'explain';
+export type AIMode = 'feedback' | 'coach' | 'scenario' | 'explain' | 'decide';
 
 const BOARD = `Board conventions:
 - Player x: 0 = own goal line, 1 = opponent goal line. y: 0 = the team's left, 1 = its right. "n" is the shirt number shown on the pitch.
@@ -36,4 +36,16 @@ Rules: 4 to 12 steps. The first step is the starting position with "seconds": 0.
 
   explain: `You are a football tactical analyst narrating an animated shape diagram. You receive snapshots recorded as the ball moved around the pitch: for each moment the caption, ball position, which team had possession, each team's shape metrics (length = back-to-front depth in metres, width, gaps between lines, line heights measured from own goal) and a count of what players were doing (pressing, covering, marking, recovering...).
 For each moment write 1-2 sentences about what the shape did and why (ball-side shift, press trigger, cover, recovery runs, space left behind). Then finish with "Takeaways:" and 2-3 concrete, honest conclusions about weaknesses or strengths this sequence exposed and which instructions or team sliders to change. Under 320 words. Plain text, no tables.`,
+
+  decide: `You are the decision-making brain for ONE team in a live football simulation. A fast rule-based engine moves the players every fraction of a second; you step in every few seconds of match time and give individual players SHORT-LIVED ORDERS that change what they do for a while. You decide who should do what in the current situation, like a player-coach reading the game.
+
+You receive: match clock and score, which team has the ball and where it is, your team's tactics, each of your players (shirt number n, role, position, what they are currently doing, any active order) and the opponent's positions. Positions use each team's own frame: x 0 = own goal line, 1 = opponent goal line; y 0 = that team's left, 1 = right. Ball position is in YOUR team's frame.
+
+Available orders (use these exact names):
+press, counter_press, hold, drop, cover, overlap, stay_wide, cut_inside, run_behind, support_short, go_direct, take_on, shoot, recycle, free_role, mark (requires "mark": opponent shirt number).
+
+Reply with ONLY a JSON object, no prose and no code fences:
+{"say": "<one sentence: your read of the situation>",
+ "orders": [{"n": <your shirt number>, "order": "<name>", "seconds": <6..45>, "mark": <opponent n, only for mark>, "why": "<max 12 words>"}]}
+Rules: give orders to 0-5 players, only where they matter now; do not repeat an order a player already has unless extending it makes sense; never order the goalkeeper; keep the team balanced (do not send everyone forward or everyone back); react to possession: if you just lost the ball consider counter_press or drop, if you are building up consider support_short/overlap/run_behind, if the opponent has the ball in your half consider cover/mark/press. If the situation is fine, return an empty orders list.`,
 };

@@ -43,6 +43,27 @@ Top bar → **🎞 Shape Lab**. Both teams' formations react to the ball using t
   (Pressing the ball, Covering the press, Man-marking #9, Protecting the box, Recovering shape, Overlapping…).
   Live metrics give block depth/width, gaps between lines and back-line height. Coach instructions still apply instantly.
 
+## AI decision model
+
+During a live match, switch on **🧠 AI decision model** for Home and/or Away. The engine still plays every moment; every
+N seconds of match time (and on turnovers and goals) the decision model reads the situation and issues short-lived
+per-player *orders*: press, counter-press, cover, drop, overlap, stay wide, cut inside, run in behind, support short,
+go direct, take on, shoot, recycle, free role, man-mark. Orders expire on their own, show with a ★ in the labels, and
+are logged with the model's reason. The match can pause while the model thinks. A call cap limits cost, and it switches
+itself off after three consecutive errors.
+
+Two models, both through OpenRouter:
+
+| Env var | Used for | Suggestion |
+|---|---|---|
+| `OPENROUTER_TEXT_MODEL` | coach commands, feedback, shape-lab scenarios and explanations | a strong model |
+| `OPENROUTER_DECISION_MODEL` | in-match player decisions (called often) | a fast, cheap model that reliably returns JSON |
+
+(`OPENROUTER_MODEL` still works as the text-model fallback. Model ids must exist on OpenRouter; the defaults are
+`anthropic/claude-sonnet-4.5` and `anthropic/claude-haiku-4.5`, so confirm or change them.) Batch tests do not call the AI.
+
+Test with the real API: `OPENROUTER_API_KEY=sk-or-... npm run livetest` calls both models and checks the replies parse.
+
 ## Live coaching
 
 Select any player at any moment, including mid-match, and change what they do:

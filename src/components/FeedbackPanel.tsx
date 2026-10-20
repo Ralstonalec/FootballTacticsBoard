@@ -16,8 +16,8 @@ export function FeedbackPanel(props: {
   claudeError: string;
   aiReady: boolean;
   serverAI: boolean;
-  apiKey: string; model: string;
-  onApiKey: (k: string) => void; onModel: (m: string) => void;
+  apiKey: string; textModel: string; decisionModel: string;
+  onApiKey: (k: string) => void; onTextModel: (m: string) => void; onDecisionModel: (m: string) => void;
   onAnalyze: (idea: string) => void;
   onApplyIdea: () => void;
   onAsk: (idea: string) => void;
@@ -44,9 +44,18 @@ export function FeedbackPanel(props: {
           <label className="field">Local-dev OpenRouter key (optional)
             <input className="text" type="password" value={props.apiKey} placeholder="sk-or-…" onChange={(e) => props.onApiKey(e.target.value)} />
           </label>
-          <label className="field">Model (OpenRouter id)
-            <input className="text" value={props.model} onChange={(e) => props.onModel(e.target.value)} />
-          </label>
+          {props.serverAI ? (
+            <p className="muted">Text model: <code>{props.textModel}</code><br />Decision model: <code>{props.decisionModel}</code><br />(set on Vercel via OPENROUTER_TEXT_MODEL / OPENROUTER_DECISION_MODEL)</p>
+          ) : (
+            <>
+              <label className="field">Text model (coach, feedback, explain)
+                <input className="text" value={props.textModel} onChange={(e) => props.onTextModel(e.target.value)} />
+              </label>
+              <label className="field">Decision model (in-match player decisions; pick a fast one)
+                <input className="text" value={props.decisionModel} onChange={(e) => props.onDecisionModel(e.target.value)} />
+              </label>
+            </>
+          )}
         </div>
       )}
       <textarea

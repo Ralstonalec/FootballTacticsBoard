@@ -75,3 +75,6 @@ ul.events li.coach { color: #86efac; }
 .lab-caption { background: var(--panel2); border-radius: 8px; padding: 6px 10px; margin: 6px 0; font-size: 12.5px; }
 .lab-caption div { color: #fde68a; margin-top: 2px; }
 .intent { background: var(--panel2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.check { display: block; margin: 4px 0; font-size: 13px; }
+code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+ul.events li.ai { color: #c4b5fd; }

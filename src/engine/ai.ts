@@ -1,25 +1,26 @@
 import type { Instructions, Team, TeamTactics } from './types';
 import type { Aggregate } from './batch';
-import type { Match } from './sim';
+import { ORDERS, type Match, type TeamIdx } from './sim';
 import { SYSTEM, type AIMode } from '../../api/_prompts';
 
 const ENDPOINT = '/api/claude';
 
-export interface AIStatus { server: boolean; browserKey: boolean }
+export interface BrowserKey { apiKey: string; textModel: string; decisionModel: string }
+export interface ServerInfo { configured: boolean; textModel?: string; decisionModel?: string }
 
-/** Is the Vercel function reachable and configured? (false in plain `vite dev`.) */
-export async function probeServer(): Promise<boolean> {
+/** Is the Vercel function reachable and configured? (not available in plain `vite dev`.) */
+export async function probeServer(): Promise<ServerInfo> {
   try {
     const r = await fetch(ENDPOINT);
-    if (!r.ok) return false;
+    if (!r.ok) return { configured: false };
     const j = await r.json();
-    return j.configured === true;
+    return { configured: j.configured === true, textModel: j.textModel, decisionModel: j.decisionModel };
   } catch {
-    return false;
+    return { configured: false };
   }
 }
 
-async function callAI(mode: AIMode, content: string, browserKey?: { apiKey: string; model: string }): Promise<string> {
+async function callAI(mode: AIMode, content: string, browserKey?: BrowserKey): Promise<string> {
   if (!browserKey?.apiKey) {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
@@ -35,8 +36,8 @@ async function callAI(mode: AIMode, content: string, browserKey?: { apiKey: stri
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${browserKey.apiKey}`, 'x-title': 'Football Tactics Board' },
     body: JSON.stringify({
-      model: browserKey.model,
-      max_tokens: mode === 'coach' ? 700 : mode === 'feedback' ? 1200 : 900,
+      model: mode === 'decide' ? browserKey.decisionModel : browserKey.textModel,
+      max_tokens: mode === 'coach' ? 700 : mode === 'feedback' ? 1200 : mode === 'decide' ? 600 : 900,
       messages: [{ role: 'system', content: SYSTEM[mode] }, { role: 'user', content }],
     }),
   });
@@ -92,7 +93,7 @@ function liveSummary(match: Match | null, side: 0 | 1): string {
 
 export async function askFeedback(opts: {
   idea: string; team: Team; opp: Team; agg?: Aggregate | null; side: 0 | 1;
-  browserKey?: { apiKey: string; model: string };
+  browserKey?: BrowserKey;
 }): Promise<string> {
   oppRef = opts.opp;
   const content = `Coach's idea: ${opts.idea || '(no specific idea; review the setup)'}\n\nMy team:\n${JSON.stringify(compact(opts.team, null, opts.side))}\n\nOpponent:\n${JSON.stringify(compact(opts.opp, null, (1 - opts.side) as 0 | 1))}${simSummary(opts.agg, opts.side)}`;
@@ -154,7 +155,7 @@ export function parseCoachReply(text: string, team: Team, opp: Team): CoachResul
 
 export async function askCoach(opts: {
   command: string; team: Team; opp: Team; side: 0 | 1; match: Match | null; selectedNumber?: number;
-  browserKey?: { apiKey: string; model: string };
+  browserKey?: BrowserKey;
 }): Promise<CoachResult> {
   oppRef = opts.opp;
   const content = `Coach's instruction: ${opts.command}${opts.selectedNumber ? `\n(The coach currently has player #${opts.selectedNumber} selected.)` : ''}\n\nMy team:\n${JSON.stringify(compact(opts.team, opts.match, opts.side))}\n\nOpponent:\n${JSON.stringify(compact(opts.opp, opts.match, (1 - opts.side) as 0 | 1))}${liveSummary(opts.match, opts.side)}`;
@@ -192,14 +193,84 @@ export function parseScenario(text: string): Scenario {
 
 const brief = (t: Team) => ({ name: t.name, shape: t.players.map((p) => p.role).join(' '), tactics: t.tactics });
 
-export async function askScenario(opts: { prompt: string; home: Team; away: Team; browserKey?: { apiKey: string; model: string } }): Promise<Scenario> {
+export async function askScenario(opts: { prompt: string; home: Team; away: Team; browserKey?: BrowserKey }): Promise<Scenario> {
   const content = `Coach's request: ${opts.prompt}\n\nHome: ${JSON.stringify(brief(opts.home))}\nAway: ${JSON.stringify(brief(opts.away))}`;
   return parseScenario(await callAI('scenario', content, opts.browserKey));
 }
 
 export interface ShapeSnapshot { caption: string; ball: [number, number]; possession: 'home' | 'away'; home: unknown; away: unknown }
 
-export async function askExplain(opts: { title: string; snapshots: ShapeSnapshot[]; browserKey?: { apiKey: string; model: string } }): Promise<string> {
+export async function askExplain(opts: { title: string; snapshots: ShapeSnapshot[]; browserKey?: BrowserKey }): Promise<string> {
   const content = `Sequence: ${opts.title}\n\n${JSON.stringify(opts.snapshots)}`;
   return callAI('explain', content, opts.browserKey);
+}
+
+// ------------------------------------------------------------ decision model
+export interface DecisionOrder { playerId: string; order: string; seconds: number; markId?: string; why: string; n: number }
+export interface DecisionResult { say: string; orders: DecisionOrder[] }
+
+const f2 = (v: number) => +v.toFixed(2);
+
+/** Compact snapshot of the match from one team's point of view, for the decision model. */
+export function buildDecisionState(m: Match, side: TeamIdx): string {
+  const mine = m.teams[side], theirs = m.teams[1 - side];
+  const fx = (x: number) => f2(side === 0 ? x / 105 : 1 - x / 105);
+  const fy = (y: number) => f2(side === 0 ? y / 68 : 1 - y / 68);
+  const opx = (x: number) => f2(side === 0 ? 1 - x / 105 : x / 105); // opponent in their own frame
+  const opy = (y: number) => f2(side === 0 ? 1 - y / 68 : y / 68);
+  const owner = m.ball.owner;
+  const poss = owner ? owner.team : m.ball.lastTeam;
+  const me = m.stats[side], them = m.stats[1 - side];
+  return JSON.stringify({
+    clock: m.clock, score: { you: m.score[side], opponent: m.score[1 - side] },
+    possession: poss === side ? 'you' : 'opponent',
+    ballWith: owner ? (owner.team === side ? `your #${mine.players.indexOf(owner.spec) + 1}` : `their #${theirs.players.indexOf(owner.spec) + 1}`) : 'loose/in flight',
+    ball: { x: fx(m.ball.x), y: fy(m.ball.y) },
+    stats: { shots: [me.shots, them.shots], xg: [f2(me.xg), f2(them.xg)] },
+    tactics: mine.tactics,
+    yourPlayers: mine.players.map((sp, i) => {
+      const p = m.findPlayer(sp.id)!;
+      return { n: i + 1, role: sp.role, x: fx(p.x), y: fy(p.y), doing: p.intent, order: p.order && m.t < p.order.until ? p.order.name : null, stamina: f2(p.stamina) };
+    }),
+    opponents: theirs.players.map((sp, i) => {
+      const p = m.findPlayer(sp.id)!;
+      return { n: i + 1, role: sp.role, x: opx(p.x), y: opy(p.y) };
+    }),
+  });
+}
+
+export function parseDecisions(text: string, m: Match, side: TeamIdx): DecisionResult {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('The decision model did not return orders.');
+  let raw: { say?: unknown; orders?: unknown };
+  try { raw = JSON.parse(text.slice(start, end + 1)); } catch { throw new Error('The decision model returned malformed orders.'); }
+  const mine = m.teams[side].players, theirs = m.teams[1 - side].players;
+  const seen = new Set<string>();
+  const orders: DecisionOrder[] = [];
+  for (const o of (Array.isArray(raw.orders) ? raw.orders : []).slice(0, 6)) {
+    const n = Number(o?.n);
+    const sp = Number.isInteger(n) ? mine[n - 1] : undefined;
+    const name = typeof o?.order === 'string' ? o.order : '';
+    if (!sp || sp.role === 'GK' || !Object.hasOwn(ORDERS, name) || seen.has(sp.id)) continue;
+    let markId: string | undefined;
+    if (name === 'mark') {
+      const t = theirs[Number(o.mark) - 1];
+      if (!t) continue;
+      markId = t.id;
+    }
+    const secs = Number(o.seconds);
+    seen.add(sp.id);
+    orders.push({
+      playerId: sp.id, n, order: name, markId,
+      seconds: Math.max(6, Math.min(45, Number.isFinite(secs) ? secs : 15)),
+      why: typeof o.why === 'string' ? o.why.slice(0, 100) : '',
+    });
+  }
+  return { say: typeof raw.say === 'string' ? raw.say.slice(0, 200) : '', orders };
+}
+
+export async function askDecisions(opts: { match: Match; side: TeamIdx; browserKey?: BrowserKey }): Promise<DecisionResult> {
+  const text = await callAI('decide', buildDecisionState(opts.match, opts.side), opts.browserKey);
+  return parseDecisions(text, opts.match, opts.side);
 }

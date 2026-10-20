@@ -1,4 +1,4 @@
-import type { PlayerSpec, Role, Team } from './types';
+import type { Instructions, PlayerSpec, Role, Team } from './types';
 import { RNG } from './rng';
 import { GOAL_W, PH, PW, clamp, dist, distToSegment, lerp, toWorld } from './geometry';
 
@@ -32,6 +32,7 @@ export interface SimPlayer {
   decideT: number;
   rank: number; // distance rank to ball within own team (outfield)
   intent: string; // what the player is currently trying to do (for the shape diagram)
+  order: Order | null; // temporary instruction from the decision model
 }
 
 interface Flight {
@@ -69,13 +70,35 @@ export interface TeamStats {
   touchGrid: number[];
 }
 
+/** A short-lived instruction overlay, issued by the decision model (or a coach) and expiring on its own. */
+export interface Order { name: string; patch: Partial<Instructions>; until: number; reason: string }
+
+export const ORDERS: Record<string, { label: string; patch: Partial<Instructions> }> = {
+  press: { label: 'Press the ball', patch: { press: 1, roam: 0.6 } },
+  counter_press: { label: 'Counter-press', patch: { press: 1, roam: 0.7, runs: 0.2 } },
+  hold: { label: 'Hold position', patch: { roam: 0, runs: 0.1, press: 0.3 } },
+  drop: { label: 'Drop deeper', patch: { runs: 0.05, press: 0.15, roam: 0.1 } },
+  cover: { label: 'Cover / sit', patch: { roam: 0.1, runs: 0.15, press: 0.4 } },
+  overlap: { label: 'Overlap / get forward', patch: { runs: 1, width: 0.9, roam: 0.5 } },
+  stay_wide: { label: 'Stay wide', patch: { width: 1, roam: 0.2 } },
+  cut_inside: { label: 'Cut inside', patch: { width: -0.9, dribble: 0.8, roam: 0.6 } },
+  run_behind: { label: 'Run in behind', patch: { runs: 1, roam: 0.5, shoot: 0.8 } },
+  support_short: { label: 'Offer a short option', patch: { passing: 'safe', roam: 0.7, runs: 0.3 } },
+  go_direct: { label: 'Play direct', patch: { passing: 'direct', runs: 0.85 } },
+  take_on: { label: 'Take the player on', patch: { dribble: 1, shoot: 0.6 } },
+  shoot: { label: 'Shoot on sight', patch: { shoot: 1 } },
+  recycle: { label: 'Recycle possession', patch: { passing: 'safe', dribble: 0.05, shoot: 0.05 } },
+  free_role: { label: 'Free role', patch: { roam: 1 } },
+  mark: { label: 'Man-mark', patch: { press: 0.3, roam: 0.1 } },
+};
+
 export const emptyStats = (): TeamStats => ({
   possessionT: 0, passes: 0, passesDone: 0, shots: 0, onTarget: 0, goals: 0, xg: 0,
   tackles: 0, interceptions: 0, highRecoveries: 0, ownThirdLosses: 0, finalThirdEntries: 0,
   counterShots: 0, entriesByChannel: [0, 0, 0], xgByChannel: [0, 0, 0], touchGrid: new Array(GX * GY).fill(0),
 });
 
-export interface MatchEvent { t: number; team: TeamIdx; text: string; kind: 'goal' | 'shot' | 'coach' }
+export interface MatchEvent { t: number; team: TeamIdx; text: string; kind: 'goal' | 'shot' | 'coach' | 'ai' }
 
 const attDir = (team: TeamIdx) => (team === 0 ? 1 : -1);
 const progress = (team: TeamIdx, x: number) => (team === 0 ? x / PW : 1 - x / PW);
@@ -119,7 +142,7 @@ export class Match {
       for (const spec of team.players) {
         const p: SimPlayer = {
           spec, team: ti as TeamIdx, x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0,
-          sprint: false, stamina: 1, decideT: 0.5, rank: 0, intent: 'Holding shape',
+          sprint: false, stamina: 1, decideT: 0.5, rank: 0, intent: 'Holding shape', order: null,
         };
         this.players.push(p);
         this.byTeam[ti].push(p);
@@ -135,6 +158,28 @@ export class Match {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  /** Effective instructions: the player's settings with any unexpired order laid over them. */
+  eff(p: SimPlayer): Instructions {
+    const o = p.order;
+    if (!o) return p.spec.inst;
+    if (this.t >= o.until) { p.order = null; return p.spec.inst; }
+    return { ...p.spec.inst, ...o.patch };
+  }
+
+  /** Give a player a temporary order (used by the AI decision model). `markId` is required for 'mark'. */
+  giveOrder(id: string, name: string, seconds: number, reason = '', markId?: string): boolean {
+    const p = this.findPlayer(id);
+    const def = ORDERS[name];
+    if (!p || !def || p.spec.role === 'GK') return false;
+    const patch: Partial<Instructions> = { ...def.patch };
+    if (name === 'mark') {
+      if (!markId || !this.findPlayer(markId)) return false;
+      patch.mark = markId;
+    }
+    p.order = { name, patch, until: this.t + Math.max(4, Math.min(60, seconds)), reason };
+    return true;
+  }
+
   /** Live coaching: change one player's instructions mid-match. */
   coachPlayer(id: string, patch: Partial<PlayerSpec['inst']>, note?: string): void {
     const p = this.findPlayer(id);
@@ -148,8 +193,8 @@ export class Match {
     if (note) this.log(team, note);
   }
 
-  log(team: TeamIdx, text: string): void {
-    this.events.push({ t: this.t, team, kind: 'coach', text });
+  log(team: TeamIdx, text: string, kind: 'coach' | 'ai' = 'coach'): void {
+    this.events.push({ t: this.t, team, kind, text });
     if (this.events.length > 200) this.events.shift();
   }
 
@@ -253,6 +298,7 @@ export class Match {
     const possTeam: TeamIdx = ball.owner ? ball.owner.team : ball.lastTeam;
     for (const p of this.players) {
       if (ball.owner !== p) this.setTarget(p, possTeam);
+      if (p.order && this.t < p.order.until) p.intent = `${ORDERS[p.order.name]?.label ?? p.order.name} ★`;
     }
     for (const p of this.players) this.move(p, dt);
     this.separate();
@@ -292,7 +338,7 @@ export class Match {
       outfield.sort((a, c) => ds.get(a)! - ds.get(c)!);
       outfield.forEach((p, i) => (p.rank = i));
       for (const p of this.byTeam[team]) if (p.spec.role === 'GK') p.rank = 99;
-      const avgPress = outfield.length ? outfield.reduce((s, p) => s + p.spec.inst.press, 0) / outfield.length : 0;
+      const avgPress = outfield.length ? outfield.reduce((s, p) => s + this.eff(p).press, 0) / outfield.length : 0;
       this.pressSlots[team] = 1 + Math.round(2.5 * avgPress);
     }
   }
@@ -300,7 +346,7 @@ export class Match {
   // ---------------------------------------------------------- off-ball logic
   private setTarget(p: SimPlayer, possTeam: TeamIdx): void {
     const { spec } = p;
-    const inst = spec.inst;
+    const inst = this.eff(p);
     const tac = this.teams[p.team].tactics;
     const dir = attDir(p.team);
     const ball = this.ball;
@@ -487,7 +533,7 @@ export class Match {
   private decide(p: SimPlayer): void {
     const team = p.team;
     const dir = attDir(team);
-    const inst = p.spec.inst;
+    const inst = this.eff(p);
     const tac = this.teams[team].tactics;
     const opps = this.byTeam[1 - team];
     const mates = this.byTeam[team];
@@ -575,7 +621,7 @@ export class Match {
     const sigma = 0.5 + dm * 0.03 + pressure * 1.0;
     const tx = clamp(m.x + m.vx * lead + this.rng.normal() * sigma, 0.5, PW - 0.5);
     const ty = clamp(m.y + m.vy * lead + this.rng.normal() * sigma, 0.5, PH - 0.5);
-    const speed = p.spec.inst.passing === 'direct' ? 19 : 15;
+    const speed = this.eff(p).passing === 'direct' ? 19 : 15;
     const dur = Math.max(0.3, dist(p.x, p.y, tx, ty) / speed);
     ball.flight = { fx: p.x, fy: p.y, tx, ty, t: 0, dur, passer: p, receiver: m, kind: 'pass' };
     ball.owner = null;
@@ -652,7 +698,7 @@ export class Match {
     if (f.kind === 'pass' && u > 0.05) {
       for (const o of this.byTeam[1 - f.passer.team]) {
         if (dist(o.x, o.y, ball.x, ball.y) < 2.0) {
-          const rate = 3.2 * INTERCEPT_K * (0.4 + 0.6 * o.spec.inst.press);
+          const rate = 3.2 * INTERCEPT_K * (0.4 + 0.6 * this.eff(o).press);
           if (this.rng.next() < 1 - Math.exp(-dt * rate)) {
             this.stats[o.team].interceptions++;
             this.setOwner(o);
@@ -768,7 +814,7 @@ export class Match {
   private duel(c: SimPlayer, dt: number): void {
     for (const o of this.byTeam[1 - c.team]) {
       if (dist(o.x, o.y, c.x, c.y) > 1.6) continue;
-      const rate = DUEL_K * (0.5 + 1.4 * o.spec.inst.press) * (1.2 - 0.5 * c.spec.inst.dribble);
+      const rate = DUEL_K * (0.5 + 1.4 * this.eff(o).press) * (1.2 - 0.5 * this.eff(c).dribble);
       if (this.rng.next() < 1 - Math.exp(-dt * rate)) {
         this.stats[o.team].tackles++;
         if (this.rng.next() < 0.55) this.setOwner(o);
