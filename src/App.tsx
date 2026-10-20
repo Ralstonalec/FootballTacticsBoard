@@ -13,6 +13,7 @@ import { Aggregate, runBatch } from './engine/batch';
 import { Finding, simFindings, staticFindings } from './engine/analysis';
 import { IdeaResult, interpretIdea } from './engine/ideas';
 import { askCoach, askDecisions, askExplain, askFeedback, askScenario, probeServer, BrowserKey, Scenario, ServerInfo, ShapeSnapshot } from './engine/ai';
+import { BatchPanel } from './components/SimPanel';
 import { DecisionPanel, DecisionLogEntry, DecisionOpts } from './components/DecisionPanel';
 import { ORDERS } from './engine/sim';
 import { ShapeLabPanel, LabUI } from './components/ShapeLabPanel';
@@ -504,10 +505,11 @@ export function App() {
           <button className={mode === 'match' ? 'on' : ''} onClick={() => goMode('match')}><b>▶</b> Live match</button>
           <button className={mode === 'lab' ? 'on' : ''} onClick={() => goMode('lab')}><b>🎞</b> Shape lab</button>
         </nav>
+        <div className="whose"><span>Your team</span>
         <div className="seg" role="group" aria-label="Team being edited">
           <button className={editing === 0 ? 'on home' : 'home'} onClick={() => { setEditing(0); setSelectedId(null); }}>● {home.name || 'Home'}</button>
           <button className={editing === 1 ? 'on away' : 'away'} onClick={() => { setEditing(1); setSelectedId(null); }}>● {away.name || 'Away'}</button>
-        </div>
+        </div></div>
       </header>
 
       <main className="layout">
@@ -679,17 +681,11 @@ export function App() {
                   playing={playing}
                   speed={speed}
                   heat={heat}
-                  batchN={batchN}
-                  batchBusy={batchBusy}
-                  batchDone={batchDone}
-                  agg={agg}
                   onStart={() => goMode('match')}
                   onPlayPause={() => setPlaying((p) => !p)}
                   onStop={() => goMode('board')}
                   onSpeed={setSpeed}
                   onHeat={setHeat}
-                  onBatchN={setBatchN}
-                  onBatch={runBatchNow}
                   onFinish={finishMatch}
                 />
               )}
@@ -718,6 +714,7 @@ export function App() {
           )}
           {rightTab === 'insights' && (
             <>
+              <BatchPanel batchN={batchN} batchBusy={batchBusy} batchDone={batchDone} agg={agg} stale={aggStale} onBatchN={setBatchN} onBatch={runBatchNow} />
               <FeedbackPanel
                 sideName={sideTeam.name}
                 findings={staticF}
@@ -740,7 +737,6 @@ export function App() {
                 onAsk={ask}
                 onHighlight={setHighlight}
               />
-              {aggStale && agg && <p className="muted">Batch results are out of date: you changed the board since they ran.</p>}
             </>
           )}
         </aside>

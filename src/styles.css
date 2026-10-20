@@ -140,3 +140,18 @@ ul.coach-log .change { color: #86efac; margin-left: 6px; }
 .strip li.finding { cursor: pointer; padding: 4px 8px; border-radius: 8px; background: var(--panel2); border-left: 3px solid var(--line2); }
 .strip li.finding.warn { border-left-color: var(--warn); } .strip li.finding.risk { border-left-color: var(--risk); } .strip li.finding.good { border-left-color: var(--accent); }
 .strip li.goal { color: #fde047; font-weight: 650; } .strip li.coach { color: #86efac; } .strip li.ai { color: #c4b5fd; } .strip li.shot { color: var(--muted); }
+
+/* ---------- compact layouts (round 2) ---------- */
+.sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; }
+.sliders .slider { margin: 6px 0; }
+select.full, .row > select.full { flex: 1 1 auto; width: 100%; min-width: 0; }
+.row > button.fit { flex: 0 0 auto; }
+input.text + select.full { margin-top: 6px; }
+button.wide { width: 100%; padding: 9px; }
+.tag.warn { color: var(--warn); border-color: rgba(245, 158, 11, .5); }
+.whose { display: flex; align-items: center; gap: 8px; }
+.whose > span { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.card + .card { margin-top: 0; }
+.quick { gap: 5px; }
+.quick button { padding: 3px 9px; }
+@media (max-width: 1500px) and (min-width: 1181px) { .layout { grid-template-columns: 300px minmax(420px, 1fr) 345px; gap: 14px; padding: 14px; } }

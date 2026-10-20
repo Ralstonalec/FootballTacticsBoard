@@ -79,9 +79,9 @@ export function ShapeLabPanel(props: {
       <div className="row">
         <label><input type="checkbox" checked={ui.shape} onChange={(e) => props.onShape(e.target.checked)} /> lines &amp; shape</label>
         <select value={ui.labels} onChange={(e) => props.onLabels(e.target.value as LabUI['labels'])}>
-          <option value="off">Decision labels: off</option>
-          <option value="selected">Decision labels: selected</option>
-          <option value="all">Decision labels: everyone</option>
+          <option value="off">Labels: off</option>
+          <option value="selected">Labels: selected</option>
+          <option value="all">Labels: everyone</option>
         </select>
       </div>
       {props.selected && <p className="intent"><b>{props.selected.label}</b>: {props.selected.intent}</p>}
