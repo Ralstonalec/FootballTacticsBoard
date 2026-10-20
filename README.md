@@ -43,6 +43,22 @@ Top bar → **🎞 Shape Lab**. Both teams' formations react to the ball using t
   (Pressing the ball, Covering the press, Man-marking #9, Protecting the box, Recovering shape, Overlapping…).
   Live metrics give block depth/width, gaps between lines and back-line height. Coach instructions still apply instantly.
 
+## Player roles & individual instructions
+
+Click any player → **Player** tab → **Role & instructions**:
+
+- **Role templates:** one click applies a known role (ball-playing centre-back, sweeper, anchor man, deep-lying playmaker,
+  box-to-box, half-space runner, number 10, traditional winger, inside forward, target man, poacher, false 9, pressing forward,
+  overlapping / inverted full-back, attacking wing-back…).
+- **Say it in your own words:** "drop deep between the centre-backs, play safe passes, never shoot". **Apply** understands common
+  football phrases offline (including negatives, left/right, half-spaces and "mark their number 9"); **✨ Apply with AI** handles
+  anything else. Either way the panel shows exactly what it understood and which settings changed.
+- **What the simulator actually does with it:** besides roam / press / runs / dribble / shoot / width / passing / marking, players now
+  have **depth** (drop deep to link play ↔ stay on the last line), **channel** (occupy the left wing, half-space, centre…),
+  **track back** and **crossing**. All are in *Fine-tune every setting* and can be changed mid-match.
+- Defaults reproduce the previous behaviour exactly; only players you instruct behave differently.
+- Tests: `npx tsx scripts/roletest.ts` (phrase understanding, AI-reply validation, and that each behaviour measurably changes play).
+
 ## AI decision model
 
 During a live match, switch on **🧠 AI decision model** for Home and/or Away. The engine still plays every moment; every

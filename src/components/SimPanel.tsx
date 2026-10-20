@@ -45,6 +45,7 @@ export function SimPanel(props: {
                 ['Ball won from carrier', m.stats[0].tackles, m.stats[1].tackles],
                 ['Won back in opp. half', m.stats[0].highRecoveries, m.stats[1].highRecoveries],
                 ['Final-third entries', m.stats[0].finalThirdEntries, m.stats[1].finalThirdEntries],
+                ['Crosses', m.stats[0].crosses, m.stats[1].crosses],
               ] as [string, string | number, string | number][]).map(([k, a, b]) => (
                 <tr key={k}><td className="home">{a}</td><th>{k}</th><td className="away">{b}</td></tr>
               ))}

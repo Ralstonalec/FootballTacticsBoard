@@ -1,4 +1,4 @@
-import type { Instructions, Team, TeamTactics } from './types';
+import type { Instructions, PlayerSpec, Role, Team, TeamTactics } from './types';
 import type { Aggregate } from './batch';
 import { ORDERS, type Match, type TeamIdx } from './sim';
 import { SYSTEM, type AIMode } from '../../api/_prompts';
@@ -37,7 +37,7 @@ async function callAI(mode: AIMode, content: string, browserKey?: BrowserKey): P
     headers: { 'content-type': 'application/json', authorization: `Bearer ${browserKey.apiKey}`, 'x-title': 'Football Tactics Board' },
     body: JSON.stringify({
       model: mode === 'decide' ? browserKey.decisionModel : browserKey.textModel,
-      max_tokens: mode === 'coach' ? 700 : mode === 'feedback' ? 1200 : mode === 'decide' ? 600 : 900,
+      max_tokens: mode === 'coach' ? 700 : mode === 'feedback' ? 1200 : mode === 'decide' ? 600 : mode === 'role' ? 500 : 900,
       messages: [{ role: 'system', content: SYSTEM[mode] }, { role: 'user', content }],
     }),
   });
@@ -291,4 +291,47 @@ export async function runDiagnostics(): Promise<DiagCheck[]> {
   if (!isJson)
     throw new Error(`There is no working /api/claude function here (got ${res.status === 200 ? 'a non-API page' : 'HTTP ' + res.status}). On Vercel this usually means the api/ folder was not deployed (check the project's Root Directory is the repo root and that the latest deployment succeeded). In plain \`npm run dev\` there is no API at all: use \`npx vercel dev\`, or paste a key into the local-dev field below.`);
   throw new Error(j.error ?? `Unexpected response (HTTP ${res.status}).`);
+}
+
+// ------------------------------------------------------------ player roles
+export interface RoleResult { roleName?: string; role?: Role; inst: Partial<Instructions>; summary: string }
+const ROLE_CODES: Role[] = ['GK', 'CB', 'FB', 'WB', 'DM', 'CM', 'AM', 'W', 'ST'];
+
+export function parseRoleReply(text: string, opp: Team): RoleResult {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('The AI did not return role settings.');
+  let raw: { roleName?: unknown; role?: unknown; inst?: Record<string, unknown>; summary?: unknown };
+  try { raw = JSON.parse(text.slice(start, end + 1)); } catch { throw new Error('The AI returned malformed role settings.'); }
+  const inst: Partial<Instructions> = {};
+  const src = (raw.inst && typeof raw.inst === 'object' ? raw.inst : {}) as Record<string, unknown>;
+  const num = (k: 'roam' | 'press' | 'runs' | 'dribble' | 'shoot' | 'track' | 'cross', lo = 0, hi = 1) => {
+    const v = src[k];
+    if (typeof v === 'number' && Number.isFinite(v)) inst[k] = Math.max(lo, Math.min(hi, v));
+  };
+  (['roam', 'press', 'runs', 'dribble', 'shoot', 'track', 'cross'] as const).forEach((k) => num(k));
+  if (typeof src.width === 'number' && Number.isFinite(src.width)) inst.width = Math.max(-1, Math.min(1, src.width));
+  if (typeof src.depth === 'number' && Number.isFinite(src.depth)) inst.depth = Math.max(-1, Math.min(1, src.depth));
+  if ('lane' in src) {
+    if (src.lane === null) inst.lane = null;
+    else if (typeof src.lane === 'number' && Number.isFinite(src.lane)) inst.lane = Math.max(0, Math.min(1, src.lane));
+  }
+  if (src.passing === 'safe' || src.passing === 'mixed' || src.passing === 'direct') inst.passing = src.passing;
+  if ('mark' in src) {
+    if (src.mark === null) inst.mark = null;
+    else if (Number.isInteger(src.mark) && opp.players[(src.mark as number) - 1]) inst.mark = opp.players[(src.mark as number) - 1].id;
+  }
+  const role = typeof raw.role === 'string' && (ROLE_CODES as string[]).includes(raw.role) ? (raw.role as Role) : undefined;
+  return {
+    roleName: typeof raw.roleName === 'string' && raw.roleName.trim() ? raw.roleName.trim().slice(0, 40) : undefined,
+    role, inst,
+    summary: typeof raw.summary === 'string' ? raw.summary.slice(0, 240) : '',
+  };
+}
+
+export async function askRole(opts: { text: string; player: PlayerSpec; number: number; team: Team; opp: Team; browserKey?: BrowserKey }): Promise<RoleResult> {
+  oppRef = opts.opp;
+  const p = opts.player;
+  const content = `Coach's instruction for player #${opts.number}: ${opts.text}\n\nThis player: ${JSON.stringify({ role: p.role, roleName: p.roleName, x: +p.x.toFixed(2), y: +p.y.toFixed(2), ...p.inst, mark: p.inst.mark ? markNumber(p.inst.mark) : null })}\n\nOwn team (n, role): ${JSON.stringify(opts.team.players.map((q, i) => ({ n: i + 1, role: q.role })))}\nOpponent (n, role, x, y in their own frame): ${JSON.stringify(opts.opp.players.map((q, i) => ({ n: i + 1, role: q.role, x: +q.x.toFixed(2), y: +q.y.toFixed(2) })))}`;
+  return parseRoleReply(await callAI('role', content, opts.browserKey), opts.opp);
 }
