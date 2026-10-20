@@ -15,7 +15,7 @@ const ok = (name: string, cond: boolean, extra: unknown = '') => { if (!cond) fa
 
 // no key
 delete process.env.OPENROUTER_API_KEY;
-ok('GET without key reports configured:false', (await call('GET')).body && ((await call('GET')).body as { configured: boolean }).configured === false);
+ok('GET without key reports configured:false', ((await call('GET')).body as { configured: boolean }).configured === false);
 ok('POST without key -> 503', (await call('POST', { mode: 'coach', content: 'x' })).code === 503);
 
 // with key + stubbed upstream
