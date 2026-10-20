@@ -64,6 +64,19 @@ Two models, both through OpenRouter:
 
 Test with the real API: `OPENROUTER_API_KEY=sk-or-... npm run livetest` calls both models and checks the replies parse.
 
+## AI won't connect? Troubleshooting
+
+Open **Insights → ⚙ → 🔌 Test AI connection**. The server checks each link and tells you which one fails:
+key present → key well-formed → OpenRouter accepts it → models exist → each model answers.
+
+Most common causes:
+- `OPENROUTER_API_KEY` is not set for the environment you are visiting (**Production vs Preview**), or you added it but did **not redeploy**; Vercel applies variables only to new deployments.
+- The key was pasted with quotes, spaces or a trailing newline, or it is not an `sk-or-…` OpenRouter key.
+- The model ids are wrong: use the exact ids from openrouter.ai/models in `OPENROUTER_TEXT_MODEL` / `OPENROUTER_DECISION_MODEL`.
+- No credits or the key's spend limit is used up (HTTP 402), or the model is blocked by your OpenRouter privacy/data-policy settings (HTTP 404).
+- Running plain `npm run dev`: there is no `/api` there. Use `npx vercel dev`, or paste a key into the local-dev field.
+- Check the Vercel deployment's Functions/Runtime logs for `api/claude` for the raw upstream error.
+
 ## Live coaching
 
 Select any player at any moment, including mid-match, and change what they do:

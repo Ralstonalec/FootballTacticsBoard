@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Finding } from '../engine/analysis';
 import type { IdeaResult } from '../engine/ideas';
 import { Section } from './ui';
+import { runDiagnostics, type DiagCheck } from '../engine/ai';
 
 const ICON = { good: '✅', info: 'ℹ️', warn: '⚠️', risk: '🛑' } as const;
 
@@ -25,6 +26,13 @@ export function FeedbackPanel(props: {
 }) {
   const [idea, setIdea] = useState('');
   const [settings, setSettings] = useState(false);
+  const [diag, setDiag] = useState<DiagCheck[] | null>(null);
+  const [diagErr, setDiagErr] = useState('');
+  const [diagBusy, setDiagBusy] = useState(false);
+  const testConnection = async () => {
+    setDiagBusy(true); setDiag(null); setDiagErr('');
+    try { setDiag(await runDiagnostics()); } catch (e) { setDiagErr(e instanceof Error ? e.message : String(e)); } finally { setDiagBusy(false); }
+  };
   const render = (fs: Finding[]) => (
     <ul className="findings">
       {fs.map((f, i) => (
@@ -44,6 +52,13 @@ export function FeedbackPanel(props: {
           <label className="field">Local-dev OpenRouter key (optional)
             <input className="text" type="password" value={props.apiKey} placeholder="sk-or-…" onChange={(e) => props.onApiKey(e.target.value)} />
           </label>
+          <button className="primary wide" onClick={testConnection} disabled={diagBusy}>{diagBusy ? 'Testing…' : '🔌 Test AI connection'}</button>
+          {diagErr && <p className="error">{diagErr}</p>}
+          {diag && (
+            <ul className="diag">
+              {diag.map((c, i) => <li key={i} className={c.ok ? 'ok' : 'bad'}><b>{c.ok ? '✅' : '❌'} {c.name}</b><span>{c.detail}</span></li>)}
+            </ul>
+          )}
           {props.serverAI ? (
             <p className="muted">Text model: <code>{props.textModel}</code><br />Decision model: <code>{props.decisionModel}</code><br />(set on Vercel via OPENROUTER_TEXT_MODEL / OPENROUTER_DECISION_MODEL)</p>
           ) : (

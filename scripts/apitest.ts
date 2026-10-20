@@ -4,10 +4,10 @@ import { Match } from '../src/engine/sim';
 import { buildTeam } from '../src/engine/formations';
 
 type R = { code: number; body: unknown };
-const call = async (method: string, body?: unknown, ip = '1.1.1.1'): Promise<R> => {
+const call = async (method: string, body?: unknown, ip = '1.1.1.1', query?: Record<string, string>): Promise<R> => {
   let code = 0; let out: unknown;
   const res = { status(c: number) { code = c; return res; }, json(b: unknown) { out = b; } };
-  await handler({ method, body, headers: { 'x-forwarded-for': ip } }, res);
+  await handler({ method, body, query, headers: { 'x-forwarded-for': ip } }, res);
   return { code, body: out };
 };
 let fails = 0;
@@ -83,5 +83,35 @@ ok('decisions: seconds clamped to 6..45', d.orders[0].seconds === 45 && d.orders
 ok('decisions: mark maps to opponent id', d.orders[1].markId === gm.teams[1].players[8].id);
 let t3 = false; try { parseDecisions('nothing', gm, 0); } catch { t3 = true; }
 ok('decisions: non-JSON throws friendly error', t3);
+// ---- connection diagnostics
+type Checks = { checks: { name: string; ok: boolean; detail: string }[] };
+const diag = async (ip: string) => ((await call('GET', undefined, ip, { check: '1' })).body as Checks).checks;
+const stub = (routes: Record<string, () => Response>) => { globalThis.fetch = (async (url: string) => { const path = new URL(url).pathname.replace('/api/v1', ''); const f = routes[path]; return f ? f() : new Response('{}', { status: 404 }); }) as typeof fetch; };
+const J = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+delete process.env.OPENROUTER_MODEL; process.env.OPENROUTER_TEXT_MODEL = 'a/text'; process.env.OPENROUTER_DECISION_MODEL = 'b/fast';
+
+delete process.env.OPENROUTER_API_KEY;
+let dg = await diag('d1');
+ok('diag: missing key explains Vercel env + redeploy', dg.length === 1 && !dg[0].ok && /REDEPLOY/.test(dg[0].detail), dg);
+
+process.env.OPENROUTER_API_KEY = '"sk-or-abc "\n';
+stub({ '/key': () => J({ error: { message: 'No auth credentials found' } }, 401) });
+dg = await diag('d2');
+ok('diag: flags quotes/whitespace in the key', dg.some((c) => c.name === 'Key looks well-formed' && !c.ok && /quote/.test(c.detail) && /whitespace/.test(c.detail)), dg);
+ok('diag: 401 reported as invalid key and stops', dg.some((c) => c.name === 'OpenRouter accepts the key' && !c.ok && /401/.test(c.detail)) && dg.length === 3, dg.map((c) => c.name));
+
+process.env.OPENROUTER_API_KEY = 'sk-or-v1-goodkey';
+stub({ '/key': () => J({ data: { limit_remaining: 4.5, is_free_tier: false } }), '/models': () => J({ data: [{ id: 'a/text' }] }), '/chat/completions': () => J({ error: { message: 'Insufficient credits' } }, 402) });
+dg = await diag('d3');
+ok('diag: wrong decision model id is called out', dg.some((c) => c.name === 'Decision model exists' && !c.ok && /openrouter\.ai\/models/.test(c.detail)), dg);
+ok('diag: 402 gets a credits hint', dg.some((c) => /answers/.test(c.name) && !c.ok && /credits/.test(c.detail)), dg);
+
+stub({ '/key': () => J({ data: { limit_remaining: null } }), '/models': () => J({ data: [{ id: 'a/text' }, { id: 'b/fast' }] }), '/chat/completions': () => J({ choices: [{ message: { content: 'OK' } }] }) });
+dg = await diag('d4');
+ok('diag: healthy setup is all green', dg.length >= 6 && dg.every((c) => c.ok), dg.filter((c) => !c.ok));
+ok('diag never leaks the key', !JSON.stringify(dg).includes('goodkey'));
+globalThis.fetch = (async () => { throw new Error('getaddrinfo ENOTFOUND openrouter.ai'); }) as typeof fetch;
+dg = await diag('d5');
+ok('diag: network failure is reported', dg.some((c) => /reach openrouter/.test(c.name) && !c.ok && /ENOTFOUND/.test(c.detail)), dg);
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

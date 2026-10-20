@@ -155,3 +155,8 @@ button.wide { width: 100%; padding: 9px; }
 .quick { gap: 5px; }
 .quick button { padding: 3px 9px; }
 @media (max-width: 1500px) and (min-width: 1181px) { .layout { grid-template-columns: 300px minmax(420px, 1fr) 345px; gap: 14px; padding: 14px; } }
+
+ul.diag { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+ul.diag li { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border-radius: 8px; background: var(--panel); border-left: 3px solid var(--line2); }
+ul.diag li.ok { border-left-color: var(--accent); } ul.diag li.bad { border-left-color: var(--risk); }
+ul.diag li span { color: var(--muted); word-break: break-word; }
